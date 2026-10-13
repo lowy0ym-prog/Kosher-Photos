@@ -10,6 +10,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
 import android.webkit.URLUtil;
@@ -18,6 +19,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
@@ -28,6 +30,10 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ProgressBar progress;
     private ValueCallback<Uri[]> filePathCallback;
+
+    // Full-screen video support
+    private View customView;
+    private WebChromeClient.CustomViewCallback customViewCallback;
 
     // Main Google Photos page (blocked pages send you back here).
     private static final String HOME_URL = "https://photos.google.com/";
@@ -42,11 +48,6 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------
     // ONLY these sites can be opened as a page. Everything else is refused,
     // so the app cannot be used to browse the rest of the web.
-    //   photos.google.com        - Google Photos itself
-    //   accounts.google.com etc. - Google sign-in
-    //   googleusercontent.com    - where photo downloads come from
-    // If sign-in ever breaks because Google needs another address, it
-    // would have to be added here.
     // ---------------------------------------------------------------
     private static final String[] ALLOWED_HOSTS = {
         "photos.google.com",
@@ -59,10 +60,6 @@ public class MainActivity extends Activity {
 
     // Inside Google Photos, any address containing one of these pieces of
     // text is refused (the "create album" / print-store pages).
-    // I could not verify Google's real addresses for these pages. If the
-    // sample page still shows up, open photos.google.com in Chrome, start
-    // creating an album, copy a distinctive piece of the address bar and add
-    // it to this list.
     private static final String[] BLOCKED_URL_CONTAINS = {
         "/create",
         "printstore",
@@ -70,6 +67,42 @@ public class MainActivity extends Activity {
         "/gift",
         "/photobooks"
     };
+
+    // Script that hides "Get the app" / "Open in app" / "You're missing out"
+    // banners. It looks for that wording on the page (not for Google's
+    // internal names, which change often) and hides the banner around it.
+    // Best effort: if Google changes the wording, a banner can come back.
+    private static final String HIDE_BANNERS_JS =
+        "(function(){"
+        + "if(window.__kpBannerHider){window.__kpBannerHider();return;}"
+        + "var re=/(get the app|open (in )?(the )?(google photos )?app|you.?re missing out|use the app|install the app)/i;"
+        + "function hideFor(node){"
+        + "  var el=node.parentElement,depth=0,fallback=null;"
+        + "  while(el&&el!==document.body&&depth<8){"
+        + "    var cs=getComputedStyle(el),r=el.getBoundingClientRect();"
+        + "    var small=r.height<window.innerHeight*0.4;"
+        + "    if(small&&(cs.position==='fixed'||cs.position==='sticky')){el.style.display='none';return;}"
+        + "    if(!fallback&&small&&r.width>=window.innerWidth*0.6&&r.height>=30&&r.height<=260){fallback=el;}"
+        + "    el=el.parentElement;depth++;"
+        + "  }"
+        + "  if(fallback){fallback.style.display='none';}"
+        + "}"
+        + "function scan(){"
+        + "  var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false),n;"
+        + "  while((n=w.nextNode())){"
+        + "    var t=n.nodeValue;"
+        + "    if(t&&t.length<120&&re.test(t)){"
+        + "      var p=n.parentElement;"
+        + "      if(p&&p.tagName!=='SCRIPT'&&p.tagName!=='STYLE'&&p.offsetParent!==null||(p&&getComputedStyle(p).position==='fixed')){hideFor(n);}"
+        + "    }"
+        + "  }"
+        + "}"
+        + "var timer=null;"
+        + "function later(){if(timer)return;timer=setTimeout(function(){timer=null;try{scan();}catch(e){}},600);}"
+        + "window.__kpBannerHider=later;"
+        + "new MutationObserver(later).observe(document.body,{childList:true,subtree:true});"
+        + "later();"
+        + "})();";
 
     private boolean isAllowed(String url) {
         if (url == null) return false;
@@ -107,6 +140,23 @@ public class MainActivity extends Activity {
         view.loadUrl(HOME_URL);
     }
 
+    private void injectBannerHider(WebView view) {
+        view.evaluateJavascript(HIDE_BANNERS_JS, null);
+    }
+
+    private void leaveFullScreenVideo() {
+        if (customView == null) return;
+        FrameLayout decor = (FrameLayout) getWindow().getDecorView();
+        decor.removeView(customView);
+        customView = null;
+        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        if (customViewCallback != null) {
+            customViewCallback.onCustomViewHidden();
+            customViewCallback = null;
+        }
+        webView.setVisibility(View.VISIBLE);
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -125,12 +175,12 @@ public class MainActivity extends Activity {
         webView.getSettings().setDatabaseEnabled(true);
         webView.getSettings().setUseWideViewPort(true);
         webView.getSettings().setLoadWithOverviewMode(false);
-        // Zoom is handled by the Google Photos page itself. Turning off the
-        // WebView's own zoom avoids it fighting with swipe gestures.
         webView.getSettings().setSupportZoom(false);
         webView.getSettings().setBuiltInZoomControls(false);
         webView.getSettings().setDisplayZoomControls(false);
         webView.getSettings().setAllowFileAccess(false);
+        // Let videos start when you tap them (WebView otherwise can refuse).
+        webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -170,11 +220,14 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
                 view.setVisibility(View.VISIBLE);
+                if (url != null && url.contains("photos.google.com")) {
+                    injectBannerHider(view);
+                }
             }
         });
 
-        // "Add photos" / any upload button: open the phone's photo picker.
         webView.setWebChromeClient(new WebChromeClient() {
+            // "Add photos" / any upload button: open the phone's photo picker.
             @Override
             public boolean onShowFileChooser(WebView view,
                                              ValueCallback<Uri[]> callback,
@@ -191,6 +244,31 @@ public class MainActivity extends Activity {
                     return false;
                 }
                 return true;
+            }
+
+            // Full-screen video (the full-screen button on a playing video).
+            @Override
+            public void onShowCustomView(View view, CustomViewCallback callback) {
+                if (customView != null) {
+                    callback.onCustomViewHidden();
+                    return;
+                }
+                customView = view;
+                customViewCallback = callback;
+                FrameLayout decor = (FrameLayout) getWindow().getDecorView();
+                decor.addView(view, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
+                decor.setSystemUiVisibility(
+                        View.SYSTEM_UI_FLAG_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
+                webView.setVisibility(View.INVISIBLE);
+            }
+
+            @Override
+            public void onHideCustomView() {
+                leaveFullScreenVideo();
             }
         });
 
@@ -248,7 +326,9 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) {
+        if (customView != null) {
+            leaveFullScreenVideo();
+        } else if (webView.canGoBack()) {
             webView.goBack();
         } else {
             super.onBackPressed();
