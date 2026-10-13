@@ -17,7 +17,15 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ProgressBar progress;
 
-    private static final String START_URL = "https://photos.google.com/";
+    // Main Google Photos page (where blocked pages send you back to).
+    private static final String HOME_URL = "https://photos.google.com/";
+
+    // The app opens here first. If you are not signed in, Google shows its
+    // sign-in screen; once signed in (the login is remembered), it goes
+    // straight on to Google Photos.
+    private static final String START_URL =
+            "https://accounts.google.com/ServiceLogin?service=lh2"
+            + "&continue=https%3A%2F%2Fphotos.google.com%2F";
 
     // Blocking only applies on the Google Photos site itself, so Google's
     // sign-in pages are never affected by these patterns.
@@ -87,7 +95,7 @@ public class MainActivity extends Activity {
                     Toast.makeText(MainActivity.this,
                             "This page is disabled in this app.",
                             Toast.LENGTH_SHORT).show();
-                    view.loadUrl(START_URL);
+                    view.loadUrl(HOME_URL);
                 }
             }
 
