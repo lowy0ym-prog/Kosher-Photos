@@ -6,14 +6,19 @@ import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
+import android.webkit.WebSettings;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -30,6 +35,20 @@ public class MainActivity extends Activity {
     private WebView webView;
     private ProgressBar progress;
     private ValueCallback<Uri[]> filePathCallback;
+
+    // Pull-down-to-refresh: the page tells us (through KP.setTop) whether the
+    // spot you touched is scrolled to the very top.
+    private volatile boolean touchAtTop = false;
+    private float pullStartY = -1f;
+    private boolean pullTracking = false;
+    private boolean pullDone = false;
+
+    public class TopBridge {
+        @JavascriptInterface
+        public void setTop(boolean atTop) {
+            touchAtTop = atTop;
+        }
+    }
 
     // Full-screen video support
     private View customView;
@@ -76,6 +95,12 @@ public class MainActivity extends Activity {
     private static final String HIDE_BANNERS_JS =
         "(function(){"
         + "if(window.__kpBannerHider){window.__kpBannerHider();return;}"
+        + "document.addEventListener('touchstart',function(e){"
+        + "  var el=e.target,top=true;"
+        + "  while(el&&el!==document){if(el.scrollTop>0){top=false;break;}el=el.parentElement;}"
+        + "  if(window.scrollY>0)top=false;"
+        + "  try{KP.setTop(top);}catch(x){}"
+        + "},{passive:true,capture:true});"
         + "var re=/(get the app|open (in )?(the )?(google photos )?app|you.?re missing out|use the app|install the app)/i;"
         + "function hideFor(node){"
         + "  var el=node.parentElement,depth=0,fallback=null;"
@@ -158,6 +183,17 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private boolean isOnline() {
+        try {
+            ConnectivityManager cm =
+                    (ConnectivityManager) getSystemService(CONNECTIVITY_SERVICE);
+            NetworkInfo info = cm.getActiveNetworkInfo();
+            return info != null && info.isConnected();
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private void toast(String message) {
         Toast.makeText(MainActivity.this, message, Toast.LENGTH_SHORT).show();
     }
@@ -211,6 +247,49 @@ public class MainActivity extends Activity {
         webView.getSettings().setAllowFileAccess(false);
         // Let videos start when you tap them (WebView otherwise can refuse).
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
+
+        // Cache: pages and photos already seen are kept and reused. With no
+        // internet the saved copy is shown instead of an error.
+        webView.getSettings().setCacheMode(isOnline()
+                ? WebSettings.LOAD_DEFAULT
+                : WebSettings.LOAD_CACHE_ELSE_NETWORK);
+
+        webView.addJavascriptInterface(new TopBridge(), "KP");
+
+        // Pull down from the top of the photos to refresh. This only watches
+        // the touches; it never blocks or changes normal scrolling.
+        final float pullDistance = 150f * getResources().getDisplayMetrics().density;
+        webView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent ev) {
+                try {
+                    switch (ev.getActionMasked()) {
+                        case MotionEvent.ACTION_DOWN:
+                            pullStartY = ev.getY();
+                            pullTracking = true;
+                            pullDone = false;
+                            break;
+                        case MotionEvent.ACTION_MOVE:
+                            if (pullTracking && !pullDone && ev.getPointerCount() == 1
+                                    && touchAtTop && !webView.canScrollVertically(-1)
+                                    && ev.getY() - pullStartY > pullDistance) {
+                                pullDone = true;
+                                toast("Refreshing…");
+                                webView.reload();
+                            }
+                            break;
+                        default:
+                            if (ev.getActionMasked() == MotionEvent.ACTION_UP
+                                    || ev.getActionMasked() == MotionEvent.ACTION_CANCEL
+                                    || ev.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
+                                pullTracking = false;
+                            }
+                    }
+                } catch (Exception ignored) {
+                }
+                return false; // never consume: scrolling stays normal
+            }
+        });
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -352,6 +431,12 @@ public class MainActivity extends Activity {
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        CookieManager.getInstance().flush(); // keep the sign-in saved
     }
 
     @Override
