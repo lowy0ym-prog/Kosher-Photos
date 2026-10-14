@@ -5,6 +5,7 @@ import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
@@ -41,7 +42,9 @@ public class MainActivity extends Activity {
     private volatile boolean touchAtTop = false;
     private float pullStartY = -1f;
     private boolean pullTracking = false;
-    private boolean pullDone = false;
+    private boolean pulling = false;
+    private boolean refreshing = false;
+    private View pullIndicator;
 
     public class TopBridge {
         @JavascriptInterface
@@ -183,6 +186,61 @@ public class MainActivity extends Activity {
         return false;
     }
 
+    private void showPull(float offset, float density, boolean animate) {
+        float trigger = 64f * density;
+        float size = 40f * density;
+        float frac = Math.min(1f, offset / trigger);
+        pullIndicator.setVisibility(View.VISIBLE);
+        float y = offset / 2f - size / 2f;
+        if (animate) {
+            webView.animate().translationY(offset).setDuration(200).start();
+            pullIndicator.animate().translationY(y).alpha(1f)
+                    .scaleX(1f).scaleY(1f).setDuration(200).start();
+        } else {
+            webView.animate().cancel();
+            pullIndicator.animate().cancel();
+            webView.setTranslationY(offset);
+            pullIndicator.setTranslationY(y);
+            pullIndicator.setAlpha(frac);
+            pullIndicator.setScaleX(0.6f + 0.4f * frac);
+            pullIndicator.setScaleY(0.6f + 0.4f * frac);
+        }
+    }
+
+    private void hidePull() {
+        webView.animate().translationY(0f).setDuration(200).start();
+        pullIndicator.animate().alpha(0f).setDuration(200)
+                .withEndAction(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!refreshing) pullIndicator.setVisibility(View.INVISIBLE);
+                    }
+                }).start();
+    }
+
+    private void endPull(boolean refresh) {
+        float density = getResources().getDisplayMetrics().density;
+        if (refresh) {
+            refreshing = true;
+            showPull(64f * density, density, true);
+            webView.reload();
+            webView.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    finishRefresh();
+                }
+            }, 12000); // safety: never stay stuck
+        } else {
+            hidePull();
+        }
+    }
+
+    private void finishRefresh() {
+        if (!refreshing) return;
+        refreshing = false;
+        hidePull();
+    }
+
     private boolean isOnline() {
         try {
             ConnectivityManager cm =
@@ -256,34 +314,54 @@ public class MainActivity extends Activity {
 
         webView.addJavascriptInterface(new TopBridge(), "KP");
 
-        // Pull down from the top of the photos to refresh. This only watches
-        // the touches; it never blocks or changes normal scrolling.
-        final float pullDistance = 150f * getResources().getDisplayMetrics().density;
+        // Pull down from the top of the photos to refresh: the page follows
+        // your finger down, a round spinner appears, and letting go reloads.
+        // This only watches the touches; it never blocks normal scrolling.
+        pullIndicator = findViewById(R.id.pull_indicator);
+        ProgressBar spinner = (ProgressBar) findViewById(R.id.pull_spinner);
+        spinner.setIndeterminateTintList(
+                ColorStateList.valueOf(getColor(R.color.pull_spinner)));
+        webView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        final float density = getResources().getDisplayMetrics().density;
+        final float slop = 12f * density;
         webView.setOnTouchListener(new View.OnTouchListener() {
             @Override
             public boolean onTouch(View v, MotionEvent ev) {
                 try {
-                    switch (ev.getActionMasked()) {
-                        case MotionEvent.ACTION_DOWN:
-                            pullStartY = ev.getY();
-                            pullTracking = true;
-                            pullDone = false;
-                            break;
-                        case MotionEvent.ACTION_MOVE:
-                            if (pullTracking && !pullDone && ev.getPointerCount() == 1
-                                    && touchAtTop && !webView.canScrollVertically(-1)
-                                    && ev.getY() - pullStartY > pullDistance) {
-                                pullDone = true;
-                                toast("Refreshing…");
-                                webView.reload();
+                    int action = ev.getActionMasked();
+                    if (action == MotionEvent.ACTION_DOWN) {
+                        pullStartY = ev.getRawY();
+                        pullTracking = !refreshing;
+                        pulling = false;
+                    } else if (action == MotionEvent.ACTION_MOVE) {
+                        if (!pullTracking) return false;
+                        if (ev.getPointerCount() > 1) {
+                            endPull(false);
+                            pullTracking = false;
+                            return false;
+                        }
+                        float dy = ev.getRawY() - pullStartY;
+                        if (!pulling) {
+                            if (dy < -slop) {
+                                pullTracking = false; // scrolling up: not a pull
+                            } else if (dy > slop && touchAtTop
+                                    && !webView.canScrollVertically(-1)) {
+                                pulling = true;
                             }
-                            break;
-                        default:
-                            if (ev.getActionMasked() == MotionEvent.ACTION_UP
-                                    || ev.getActionMasked() == MotionEvent.ACTION_CANCEL
-                                    || ev.getActionMasked() == MotionEvent.ACTION_POINTER_DOWN) {
-                                pullTracking = false;
-                            }
+                        }
+                        if (pulling) {
+                            float offset = Math.min((dy - slop) * 0.5f, 110f * density);
+                            if (offset < 0) offset = 0;
+                            showPull(offset, density, false);
+                        }
+                    } else if (action == MotionEvent.ACTION_UP
+                            || action == MotionEvent.ACTION_CANCEL) {
+                        if (pulling) {
+                            endPull(action == MotionEvent.ACTION_UP
+                                    && webView.getTranslationY() >= 64f * density);
+                        }
+                        pullTracking = false;
+                        pulling = false;
                     }
                 } catch (Exception ignored) {
                 }
@@ -329,6 +407,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
                 view.setVisibility(View.VISIBLE);
+                finishRefresh();
                 if (url != null && url.contains("photos.google.com")) {
                     injectBannerHider(view);
                 }
