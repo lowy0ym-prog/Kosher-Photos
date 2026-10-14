@@ -2,7 +2,7 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, modern-layout ]
   workflow_dispatch:
 
 jobs:
@@ -31,5 +31,5 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: gphotos-viewer-debug-apk
+          name: kosher-photos-new-layout-apk
           path: app/build/outputs/apk/debug/app-debug.apk

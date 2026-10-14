@@ -5,7 +5,9 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId "com.example.gphotosviewer"
+        // Different id from the current app, so both can be installed
+        // side by side while you compare them.
+        applicationId "com.example.gphotosviewer.modern"
         minSdk 24
         targetSdk 34
         versionCode 1

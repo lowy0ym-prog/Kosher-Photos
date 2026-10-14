@@ -6,7 +6,11 @@ import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
@@ -20,7 +24,9 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
+import android.widget.ImageView;
 import android.widget.ProgressBar;
+import android.widget.TextView;
 import android.widget.Toast;
 
 public class MainActivity extends Activity {
@@ -35,8 +41,23 @@ public class MainActivity extends Activity {
     private View customView;
     private WebChromeClient.CustomViewCallback customViewCallback;
 
+    // Bottom tabs
+    private static final int COLOR_ACTIVE = Color.parseColor("#1F7A8C");
+    private static final int COLOR_INACTIVE = Color.parseColor("#5F6B6D");
+    private View bottomNav;
+    private NavItem[] navItems;
+
+    private static class NavItem {
+        View wrap;
+        ImageView icon;
+        TextView label;
+    }
+
     // Main Google Photos page (blocked pages send you back here).
     private static final String HOME_URL = "https://photos.google.com/";
+    private static final String SEARCH_URL = "https://photos.google.com/search";
+    private static final String SHARING_URL = "https://photos.google.com/sharing";
+    private static final String ALBUMS_URL = "https://photos.google.com/albums";
 
     // The app opens here first. If you are not signed in, Google shows its
     // sign-in screen; once signed in (the login is remembered), it goes
@@ -144,12 +165,82 @@ public class MainActivity extends Activity {
         view.evaluateJavascript(HIDE_BANNERS_JS, null);
     }
 
+    // ---------- Top/bottom bar look ----------
+
+    @SuppressWarnings("deprecation")
+    private int barStyleFlags() {
+        int flags = View.SYSTEM_UI_FLAG_VISIBLE;
+        if (Build.VERSION.SDK_INT >= 23) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR;
+        }
+        if (Build.VERSION.SDK_INT >= 26) {
+            flags |= View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+        }
+        return flags;
+    }
+
+    @SuppressWarnings("deprecation")
+    private void applyBarStyle() {
+        getWindow().setStatusBarColor(Color.WHITE);
+        getWindow().setNavigationBarColor(Color.parseColor("#F1F6F7"));
+        getWindow().getDecorView().setSystemUiVisibility(barStyleFlags());
+    }
+
+    private NavItem makeNav(int rootId, int wrapId, int iconId, int labelId,
+                            final String url) {
+        NavItem item = new NavItem();
+        item.wrap = findViewById(wrapId);
+        item.icon = (ImageView) findViewById(iconId);
+        item.label = (TextView) findViewById(labelId);
+        findViewById(rootId).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                webView.loadUrl(url);
+            }
+        });
+        return item;
+    }
+
+    private void selectNav(int index) {
+        for (int i = 0; i < navItems.length; i++) {
+            boolean selected = (i == index);
+            NavItem item = navItems[i];
+            item.wrap.setBackgroundResource(selected ? R.drawable.nav_pill : 0);
+            item.icon.setColorFilter(selected ? COLOR_ACTIVE : COLOR_INACTIVE,
+                    PorterDuff.Mode.SRC_IN);
+            item.label.setTextColor(selected ? COLOR_ACTIVE : COLOR_INACTIVE);
+            item.label.setTypeface(null, selected ? Typeface.BOLD : Typeface.NORMAL);
+        }
+    }
+
+    private int navIndexFor(String url) {
+        String path = Uri.parse(url).getPath();
+        if (path == null) return 0;
+        if (path.startsWith("/search")) return 1;
+        if (path.startsWith("/sharing") || path.startsWith("/share")) return 2;
+        if (path.startsWith("/albums") || path.startsWith("/album")) return 3;
+        return 0;
+    }
+
+    // Show the tabs only on Google Photos pages (not on the sign-in screens)
+    // and highlight the tab you are on.
+    private void updateChrome(String url) {
+        if (url == null) return;
+        String host = Uri.parse(url).getHost();
+        boolean onPhotos = host != null && host.equalsIgnoreCase("photos.google.com");
+        bottomNav.setVisibility(onPhotos ? View.VISIBLE : View.GONE);
+        if (onPhotos) {
+            selectNav(navIndexFor(url));
+        }
+    }
+
+    @SuppressWarnings("deprecation")
     private void leaveFullScreenVideo() {
         if (customView == null) return;
         FrameLayout decor = (FrameLayout) getWindow().getDecorView();
         decor.removeView(customView);
         customView = null;
-        decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_VISIBLE);
+        decor.setSystemUiVisibility(barStyleFlags());
         if (customViewCallback != null) {
             customViewCallback.onCustomViewHidden();
             customViewCallback = null;
@@ -162,9 +253,30 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        applyBarStyle();
 
         webView = (WebView) findViewById(R.id.webview);
         progress = (ProgressBar) findViewById(R.id.progress);
+        bottomNav = findViewById(R.id.bottomnav);
+
+        navItems = new NavItem[] {
+            makeNav(R.id.nav_photos, R.id.wrap_photos, R.id.icon_photos,
+                    R.id.label_photos, HOME_URL),
+            makeNav(R.id.nav_search, R.id.wrap_search, R.id.icon_search,
+                    R.id.label_search, SEARCH_URL),
+            makeNav(R.id.nav_sharing, R.id.wrap_sharing, R.id.icon_sharing,
+                    R.id.label_sharing, SHARING_URL),
+            makeNav(R.id.nav_albums, R.id.wrap_albums, R.id.icon_albums,
+                    R.id.label_albums, ALBUMS_URL)
+        };
+        selectNav(0);
+
+        findViewById(R.id.btn_refresh).setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                webView.reload();
+            }
+        });
 
         // Cookies on so your login session is remembered between launches.
         CookieManager.getInstance().setAcceptCookie(true);
@@ -208,6 +320,8 @@ public class MainActivity extends Activity {
                 } else if (isBlockedPage(url)) {
                     toast("This page is disabled in this app.");
                     goHome(view);
+                } else {
+                    updateChrome(url);
                 }
             }
 
@@ -220,6 +334,7 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
                 view.setVisibility(View.VISIBLE);
+                updateChrome(url);
                 if (url != null && url.contains("photos.google.com")) {
                     injectBannerHider(view);
                 }
@@ -247,6 +362,7 @@ public class MainActivity extends Activity {
             }
 
             // Full-screen video (the full-screen button on a playing video).
+            @SuppressWarnings("deprecation")
             @Override
             public void onShowCustomView(View view, CustomViewCallback callback) {
                 if (customView != null) {
