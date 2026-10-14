@@ -69,7 +69,8 @@ public class MainActivity extends Activity {
     };
 
     // Script that hides "Get the app" / "Open in app" / "You're missing out"
-    // banners. It looks for that wording on the page (not for Google's
+    // banners, plus menu items such as Print store, Settings, Help & Feedback,
+    // App downloads, Get more storage and the Privacy / Terms / Policy links. It looks for that wording on the page (not for Google's
     // internal names, which change often) and hides the banner around it.
     // Best effort: if Google changes the wording, a banner can come back.
     private static final String HIDE_BANNERS_JS =
@@ -87,10 +88,19 @@ public class MainActivity extends Activity {
         + "  }"
         + "  if(fallback){fallback.style.display='none';}"
         + "}"
+        + "var labels=['help & feedback','settings','app downloads','get more storage','print store','open in app','privacy','terms','policy'];"
+        + "function hideLabel(n){"
+        + "  var el=n.parentElement;if(!el)return;"
+        + "  var t=el.closest('a,button,[role=button],[role=link],[role=menuitem],[role=tab],li')||el;"
+        + "  t.style.display='none';"
+        + "  var p=t.parentElement;"
+        + "  if(p&&p!==document.body&&/^[^A-Za-z0-9]*$/.test(p.textContent)){p.style.display='none';}"
+        + "}"
         + "function scan(){"
         + "  var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false),n;"
         + "  while((n=w.nextNode())){"
         + "    var t=n.nodeValue;"
+        + "    if(t&&labels.indexOf(t.replace(/\\s+/g,' ').trim().toLowerCase())>=0){hideLabel(n);continue;}"
         + "    if(t&&t.length<120&&re.test(t)){"
         + "      var p=n.parentElement;"
         + "      if(p&&p.tagName!=='SCRIPT'&&p.tagName!=='STYLE'&&p.offsetParent!==null||(p&&getComputedStyle(p).position==='fixed')){hideFor(n);}"
