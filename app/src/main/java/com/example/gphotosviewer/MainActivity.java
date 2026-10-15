@@ -12,6 +12,7 @@ import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Message;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -128,13 +129,20 @@ public class MainActivity extends Activity {
         + "  while(s&&!vis(s)){s=d>0?s.nextElementSibling:s.previousElementSibling;}return s;}"
         + "function norm(x){return (x||'').replace(/\\s+/g,' ').trim().toLowerCase();}"
         + "function core(x){return (x||'').replace(/\\s+/g,' ').trim().split(' ').filter(function(w){return !/^[a-z][a-z0-9_]*$/.test(w);}).join(' ').toLowerCase();}"
+        + "var INT='a,button,[role=button],[role=link],[role=menuitem],[role=option],[role=tab]';"
+        + "function icount(e){return e.querySelectorAll(INT).length+(e.matches(INT)?1:0);}"
+        + "function other(e,lab){return (e.innerText||'').toLowerCase().replace(lab,'').replace(/\\s+/g,'').length;}"
         + "function hideLabel(n){"
         + "  var el=n.parentElement;if(!el)return;"
-        + "  var lab=norm(n.nodeValue),core0=core(n.nodeValue);"
+        + "  var lab=norm(n.nodeValue);"
         + "  var t=el;"
-        + "  while(t.parentElement&&t.parentElement!==document.body&&t.parentElement.offsetHeight<110&&(norm(t.parentElement.innerText)===lab||(core0!==''&&core(t.parentElement.innerText)===core0))){t=t.parentElement;}"
-        + "  var sem=el.closest('a,button,[role=button],[role=link],[role=menuitem],[role=option],[role=tab],li');"
-        + "  if(sem&&sem.contains(t)&&sem!==t&&sem.offsetHeight<110&&(norm(sem.innerText)===lab||(core0!==''&&core(sem.innerText)===core0))){t=sem;}"
+        + "  while(t.parentElement&&t.parentElement!==document.body){"
+        + "    var q=t.parentElement;"
+        + "    if(q.getBoundingClientRect().height>90)break;"
+        + "    if(icount(q)>1)break;"
+        + "    if(other(q,lab)>40)break;"
+        + "    t=q;"
+        + "  }"
         + "  t.style.display='none';"
         + "  var p=t.parentElement,k=0;"
         + "  while(p&&p!==document.body&&k<4){"
@@ -359,6 +367,8 @@ public class MainActivity extends Activity {
         // switches to fresh downloads for that one reload.
         webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
 
+        webView.getSettings().setSupportMultipleWindows(true);
+        webView.getSettings().setJavaScriptCanOpenWindowsAutomatically(true);
         webView.addJavascriptInterface(new TopBridge(), "KP");
 
         // Pull down from the top of the photos to refresh: the page follows
@@ -479,6 +489,50 @@ public class MainActivity extends Activity {
                     toast("No photo picker found on this phone.");
                     return false;
                 }
+                return true;
+            }
+
+            // Buttons that open a "new tab": load the page here instead
+            // (still only if it is an allowed Google Photos page).
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog,
+                                          boolean isUserGesture, Message resultMsg) {
+                final WebView temp = new WebView(MainActivity.this);
+                temp.setWebViewClient(new WebViewClient() {
+                    private boolean handled = false;
+
+                    private void open(String u) {
+                        if (handled || u == null || u.equals("about:blank")) return;
+                        handled = true;
+                        if (!isAllowed(u)) {
+                            toast("Only Google Photos can be opened in this app.");
+                        } else if (isBlockedPage(u)) {
+                            toast("Disabled page: " + shortPath(u));
+                        } else {
+                            webView.loadUrl(u);
+                        }
+                        temp.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                temp.destroy();
+                            }
+                        });
+                    }
+
+                    @Override
+                    public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                        open(r.getUrl().toString());
+                        return true;
+                    }
+
+                    @Override
+                    public void onPageStarted(WebView v, String u, Bitmap f) {
+                        open(u);
+                    }
+                });
+                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(temp);
+                resultMsg.sendToTarget();
                 return true;
             }
 
