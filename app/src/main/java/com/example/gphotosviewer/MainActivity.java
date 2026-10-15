@@ -135,10 +135,10 @@ public class MainActivity extends Activity {
         + "return {"
         + "start:function(mode){"
         + "cleanup();"
-        + "var d=findDrawer();if(!d)return false;"
+        + "var d=findDrawer();if(!d)return 'menu not found';"
         + "var r=d.getBoundingClientRect(),cs=getComputedStyle(d);"
         + "var isOpen=r.right>8&&r.left>-r.width*0.5;"
-        + "if((mode==='open'&&isOpen)||(mode==='close'&&!isOpen))return false;"
+        + "if((mode==='open'&&isOpen)||(mode==='close'&&!isOpen))return 'menu already '+(isOpen?'open':'closed');"
         + "var m=new DOMMatrix(cs.transform);"
         + "D=d;W=r.width;base=r.left-m.m41;"
         + "saved={t:D.style.transition,f:D.style.transform,v:D.style.visibility};"
@@ -501,11 +501,14 @@ public class MainActivity extends Activity {
                                     dragActive = false;
                                     pullTracking = false;
                                     webView.evaluateJavascript(
-                                            "window.__kpDrag?String(window.__kpDrag.start('" + mode + "')):'false'",
+                                            "window.__kpDrag?String(window.__kpDrag.start('" + mode + "')):'menu script missing'",
                                             new ValueCallback<String>() {
                                                 @Override
                                                 public void onReceiveValue(String value) {
                                                     dragActive = value != null && value.contains("true");
+                                                    if (!dragActive && value != null && value.contains("menu")) {
+                                                        toast("Swipe: " + value.replace("\"", ""));
+                                                    }
                                                 }
                                             });
                                 }
