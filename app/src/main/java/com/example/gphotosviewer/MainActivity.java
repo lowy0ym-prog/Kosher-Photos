@@ -48,6 +48,7 @@ public class MainActivity extends Activity {
     private boolean pulling = false;
     private boolean refreshing = false;
     private View pullIndicator;
+    private long lastConsoleToast = 0;
 
     public class TopBridge {
         @JavascriptInterface
@@ -490,6 +491,27 @@ public class MainActivity extends Activity {
                     return false;
                 }
                 return true;
+            }
+
+            // Diagnostic: while on the video-creation pages, show the page's
+            // own error messages (at most one every 2 seconds).
+            @Override
+            public boolean onConsoleMessage(android.webkit.ConsoleMessage m) {
+                try {
+                    String u = webView.getUrl();
+                    if (u != null && u.contains("/movies")
+                            && m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR) {
+                        long now = System.currentTimeMillis();
+                        if (now - lastConsoleToast > 2000) {
+                            lastConsoleToast = now;
+                            String msg = m.message();
+                            if (msg.length() > 90) msg = msg.substring(0, 90);
+                            toast("Page error: " + msg);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                return super.onConsoleMessage(m);
             }
 
             // Buttons that open a "new tab": load the page here instead
