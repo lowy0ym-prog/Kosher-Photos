@@ -243,6 +243,14 @@ public class MainActivity extends Activity {
         hidePull();
     }
 
+    // Pinch-zoom of the whole page is allowed only while one photo is open,
+    // so the photo grid and menus never zoom by accident.
+    private void updateZoom(String url) {
+        boolean photo = url != null && url.contains("/photo/");
+        webView.getSettings().setSupportZoom(photo);
+        webView.getSettings().setBuiltInZoomControls(photo);
+    }
+
     private boolean isOnline() {
         try {
             ConnectivityManager cm =
@@ -302,8 +310,8 @@ public class MainActivity extends Activity {
         webView.getSettings().setUseWideViewPort(true);
         webView.getSettings().setLoadWithOverviewMode(false);
         // Pinch-to-zoom like a normal browser (the zoom stays when you let go).
-        webView.getSettings().setSupportZoom(true);
-        webView.getSettings().setBuiltInZoomControls(true);
+        // (turned on only while a single photo is open, see updateZoom)
+        updateZoom(null);
         webView.getSettings().setDisplayZoomControls(false);
         webView.getSettings().setAllowFileAccess(false);
         // Let videos start when you tap them (WebView otherwise can refuse).
@@ -392,6 +400,7 @@ public class MainActivity extends Activity {
             @Override
             public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 if (url == null) return;
+                updateZoom(url);
                 if (!isAllowed(url)) {
                     toast("Only Google Photos can be opened in this app.");
                     goHome(view);
