@@ -269,6 +269,17 @@ public class MainActivity extends Activity {
         webView.getSettings().setBuiltInZoomControls(photo);
     }
 
+    // Short form of an address for messages, e.g. "/create/album".
+    private String shortPath(String url) {
+        try {
+            String path = Uri.parse(url).getPath();
+            if (path == null) return "";
+            return path.length() > 60 ? path.substring(0, 60) : path;
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private boolean isOnline() {
         try {
             ConnectivityManager cm =
@@ -408,7 +419,7 @@ public class MainActivity extends Activity {
                     return true; // refuse
                 }
                 if (isBlockedPage(url)) {
-                    toast("This page is disabled in this app.");
+                    toast("Disabled page: " + shortPath(url));
                     return true; // refuse
                 }
                 return false;
@@ -424,7 +435,7 @@ public class MainActivity extends Activity {
                     toast("Only Google Photos can be opened in this app.");
                     goHome(view);
                 } else if (isBlockedPage(url)) {
-                    toast("This page is disabled in this app.");
+                    toast("Disabled page: " + shortPath(url));
                     goHome(view);
                 }
             }
