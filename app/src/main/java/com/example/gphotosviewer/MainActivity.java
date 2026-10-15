@@ -49,6 +49,10 @@ public class MainActivity extends Activity {
     private boolean refreshing = false;
     private View pullIndicator;
     private long lastConsoleToast = 0;
+    private float downX = 0f;
+    private long downTime = 0L;
+    private boolean edgeStart = false;
+    private boolean drawerDone = false;
 
     public class TopBridge {
         @JavascriptInterface
@@ -102,6 +106,23 @@ public class MainActivity extends Activity {
     private static final String HIDE_BANNERS_JS =
         "(function(){"
         + "if(window.__kpBannerHider){window.__kpBannerHider();return;}"
+        + "window.__kpDrawer=function(mode){"
+        + "  var open=false,w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false),n;"
+        + "  while((n=w.nextNode())){"
+        + "    if((n.nodeValue||'').trim().toLowerCase()==='storage'&&n.parentElement){"
+        + "      var r=n.parentElement.getBoundingClientRect();"
+        + "      if(r.width>0&&r.right>8&&r.left<window.innerWidth*0.8){open=true;break;}"
+        + "    }"
+        + "  }"
+        + "  if(mode==='open'&&!open){"
+        + "    var b=document.querySelector('[aria-label=\"Main menu\"],[aria-label=\"Menu\"],[aria-label=\"Open menu\"],[aria-label=\"Navigation menu\"]');"
+        + "    if(b)b.click();"
+        + "  }"
+        + "  if(mode==='close'&&open){"
+        + "    var el=document.elementFromPoint(window.innerWidth-6,window.innerHeight/2);"
+        + "    if(el&&!el.closest('a[href*=\"/photo/\"]'))el.click();"
+        + "  }"
+        + "};"
         + "document.addEventListener('touchstart',function(e){"
         + "  var el=e.target,top=true;"
         + "  while(el&&el!==document){if(el.scrollTop>0){top=false;break;}el=el.parentElement;}"
@@ -391,7 +412,31 @@ public class MainActivity extends Activity {
                         pullStartY = ev.getRawY();
                         pullTracking = !refreshing;
                         pulling = false;
+                        touchAtTop = false; // the page confirms "at top" again for this touch
+                        downX = ev.getX();
+                        downTime = ev.getEventTime();
+                        edgeStart = downX < 28f * density;
+                        drawerDone = false;
                     } else if (action == MotionEvent.ACTION_MOVE) {
+                        // Side menu: swipe in from the left edge to open it,
+                        // swipe left to close it.
+                        if (!drawerDone && ev.getPointerCount() == 1) {
+                            String cur = webView.getUrl();
+                            boolean onPhoto = cur != null && cur.contains("/photo/");
+                            float dx = ev.getX() - downX;
+                            float ady = Math.abs(ev.getRawY() - pullStartY);
+                            if (!onPhoto && edgeStart && dx > 48f * density && ady < dx * 0.6f) {
+                                drawerDone = true;
+                                pullTracking = false;
+                                webView.evaluateJavascript(
+                                        "window.__kpDrawer&&window.__kpDrawer('open')", null);
+                            } else if (!onPhoto && dx < -70f * density && ady < -dx * 0.6f) {
+                                drawerDone = true;
+                                pullTracking = false;
+                                webView.evaluateJavascript(
+                                        "window.__kpDrawer&&window.__kpDrawer('close')", null);
+                            }
+                        }
                         if (!pullTracking) return false;
                         if (ev.getPointerCount() > 1) {
                             endPull(false);
@@ -403,6 +448,7 @@ public class MainActivity extends Activity {
                             if (dy < -slop) {
                                 pullTracking = false; // scrolling up: not a pull
                             } else if (dy > slop && touchAtTop
+                                    && ev.getEventTime() - downTime > 100
                                     && !webView.canScrollVertically(-1)) {
                                 pulling = true;
                             }
@@ -499,7 +545,7 @@ public class MainActivity extends Activity {
             public boolean onConsoleMessage(android.webkit.ConsoleMessage m) {
                 try {
                     String u = webView.getUrl();
-                    if (u != null && u.contains("/movies")
+                    if (u != null && (u.contains("/movies") || u.contains("/animation") || u.contains("/collage"))
                             && m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR) {
                         long now = System.currentTimeMillis();
                         if (now - lastConsoleToast > 2000) {
