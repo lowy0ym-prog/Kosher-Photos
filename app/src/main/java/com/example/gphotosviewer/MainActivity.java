@@ -127,14 +127,14 @@ public class MainActivity extends Activity {
         + "function sib(e,d){var s=d>0?e.nextElementSibling:e.previousElementSibling;"
         + "  while(s&&!vis(s)){s=d>0?s.nextElementSibling:s.previousElementSibling;}return s;}"
         + "function norm(x){return (x||'').replace(/\\s+/g,' ').trim().toLowerCase();}"
+        + "function core(x){return (x||'').replace(/\\s+/g,' ').trim().split(' ').filter(function(w){return !/^[a-z][a-z0-9_]*$/.test(w);}).join(' ').toLowerCase();}"
         + "function hideLabel(n){"
         + "  var el=n.parentElement;if(!el)return;"
-        + "  var lab=norm(n.nodeValue);"
+        + "  var lab=norm(n.nodeValue),core0=core(n.nodeValue);"
         + "  var t=el;"
-        + "  while(t.parentElement&&t.parentElement!==document.body&&norm(t.parentElement.innerText)===lab){t=t.parentElement;}"
+        + "  while(t.parentElement&&t.parentElement!==document.body&&t.parentElement.offsetHeight<110&&(norm(t.parentElement.innerText)===lab||(core0!==''&&core(t.parentElement.innerText)===core0))){t=t.parentElement;}"
         + "  var sem=el.closest('a,button,[role=button],[role=link],[role=menuitem],[role=option],[role=tab],li');"
-        + "  if(sem&&norm(sem.innerText)===lab&&sem.contains(t)){t=sem;}"
-        + "  else if(sem&&!sem.contains(t)){}"
+        + "  if(sem&&sem.contains(t)&&sem!==t&&sem.offsetHeight<110&&(norm(sem.innerText)===lab||(core0!==''&&core(sem.innerText)===core0))){t=sem;}"
         + "  t.style.display='none';"
         + "  var p=t.parentElement,k=0;"
         + "  while(p&&p!==document.body&&k<4){"
@@ -198,7 +198,13 @@ public class MainActivity extends Activity {
         if (url == null) return false;
         String lower = url.toLowerCase();
         if (!lower.contains("photos.google.com")) return false;
+        // Highlight video, Animation and Collage use "/create" addresses too;
+        // those are allowed.
+        boolean allowedCreate = lower.contains("/movies/")
+                || lower.contains("/animation")
+                || lower.contains("/collage");
         for (String piece : BLOCKED_URL_CONTAINS) {
+            if (piece.equals("/create") && allowedCreate) continue;
             if (lower.contains(piece)) return true;
         }
         return false;
@@ -564,38 +570,54 @@ public class MainActivity extends Activity {
     // page it skips past photos and pages you opened from this one (so
     // backing out of an album or Faces does not reopen what you just left)
     // and leaves the app when there is no earlier page to return to.
+    private boolean isHomePage(String url) {
+        if (url == null) return false;
+        Uri u = Uri.parse(url);
+        String host = u.getHost();
+        if (host == null || !host.equalsIgnoreCase("photos.google.com")) return false;
+        String path = u.getPath() == null ? "" : u.getPath();
+        return path.isEmpty() || path.equals("/") || path.matches("/u/\\d+/?");
+    }
+
+    // Returns true when the back press was handled (it never leaves the app
+    // from the Google Photos pages, and never returns to the sign-in page).
     private boolean goBackSmart() {
         String current = webView.getUrl();
-        if (current != null && current.contains("/photo/")) {
-            if (webView.canGoBack()) {
-                webView.goBack();
-                return true;
-            }
-            return false;
+        Uri cu = current == null ? null : Uri.parse(current);
+        String chost = cu == null ? null : cu.getHost();
+        if (chost == null || !chost.equalsIgnoreCase("photos.google.com")) {
+            return false; // sign-in or other page: normal back / leave
         }
         WebBackForwardList list = webView.copyBackForwardList();
         int idx = list.getCurrentIndex();
+        boolean onPhoto = current.contains("/photo/");
         // If you already visited this same page earlier (for example the
         // Faces list, then a face, then the in-page back arrow), everything
-        // opened after that first visit is skipped: back goes to the page
-        // before it.
+        // opened after that first visit is skipped.
         int start = idx;
-        for (int j = 0; j < idx; j++) {
-            WebHistoryItem it = list.getItemAtIndex(j);
-            if (it != null && current != null && current.equals(it.getUrl())) {
-                start = j;
-                break;
+        if (!onPhoto) {
+            for (int j = 0; j < idx; j++) {
+                WebHistoryItem it = list.getItemAtIndex(j);
+                if (it != null && current.equals(it.getUrl())) {
+                    start = j;
+                    break;
+                }
             }
         }
         for (int i = start - 1; i >= 0; i--) {
             WebHistoryItem item = list.getItemAtIndex(i);
             String u = item == null ? null : item.getUrl();
             if (u == null || !u.contains("photos.google.com")) continue;
-            if (u.contains("/photo/") || u.equals(current)) continue;
+            if (!onPhoto && u.contains("/photo/")) continue;
+            if (u.equals(current)) continue;
             webView.goBackOrForward(i - idx);
             return true;
         }
-        return false;
+        // Nothing earlier inside Google Photos.
+        if (!isHomePage(current)) {
+            webView.loadUrl(HOME_URL); // go to the main page
+        }
+        return true; // already on the main page: stay in the app
     }
 
     @Override
@@ -603,7 +625,7 @@ public class MainActivity extends Activity {
         if (customView != null) {
             leaveFullScreenVideo();
         } else if (!goBackSmart()) {
-            super.onBackPressed(); // nothing sensible to go back to: leave the app
+            super.onBackPressed(); // sign-in page: leave the app
         }
     }
 }

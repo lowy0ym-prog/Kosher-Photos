@@ -8,8 +8,20 @@ android {
         applicationId "com.example.gphotosviewer"
         minSdk 24
         targetSdk 34
-        versionCode 1
+        // Goes up with every GitHub build so each new APK installs over the old one.
+        versionCode (System.getenv('GITHUB_RUN_NUMBER') ?: '1').toInteger()
         versionName "1.0"
+    }
+
+    // The same signing key for every build, so a new APK can be installed
+    // over the old one (keeps your sign-in and saved photos) with no uninstall.
+    signingConfigs {
+        debug {
+            storeFile file('kosher-photos-debug.keystore')
+            storePassword 'kosherphotos'
+            keyAlias 'kosherphotos'
+            keyPassword 'kosherphotos'
+        }
     }
 
     buildTypes {
