@@ -93,7 +93,7 @@ public class MainActivity extends Activity {
     };
 
     // Script that hides "Get the app" / "Open in app" / "You're missing out"
-    // banners, plus menu items such as Print store, Settings, Help & Feedback,
+    // banners, plus menu items such as Print store, Help & Feedback,
     // App downloads, Get more storage and the Privacy / Terms / Policy links. It looks for that wording on the page (not for Google's
     // internal names, which change often) and hides the banner around it.
     // Best effort: if Google changes the wording, a banner can come back.
@@ -120,7 +120,7 @@ public class MainActivity extends Activity {
         + "  }"
         + "  if(fallback){fallback.style.display='none';}"
         + "}"
-        + "var labels=['help & feedback','settings','app downloads','get more storage','print store','print','order canvas print','order photo prints','create new photo book','collage','highlight video','animation','from other places','wall art','view all products','facebook','x','open in app','privacy','terms','policy'];"
+        + "var labels=['help & feedback','app downloads','get more storage','print store','print','order canvas print','order photo prints','create new photo book','from other places','wall art','view all products','facebook','x','open in app','privacy','terms','policy'];"
         + "var tops=[];"
         + "function vis(e){return e.getClientRects().length>0;}"
         + "function isLine(e){return !!e&&(e.innerText||'')===''&&e.offsetHeight>0&&e.offsetHeight<=3;}"
