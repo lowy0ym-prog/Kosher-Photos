@@ -120,7 +120,7 @@ public class MainActivity extends Activity {
         + "  }"
         + "  if(fallback){fallback.style.display='none';}"
         + "}"
-        + "var labels=['help & feedback','settings','app downloads','get more storage','print store','print','order canvas print','order photo prints','create new photo book','wall art','view all products','facebook','x','open in app','privacy','terms','policy'];"
+        + "var labels=['help & feedback','settings','app downloads','get more storage','print store','print','order canvas print','order photo prints','create new photo book','collage','highlight video','animation','from other places','wall art','view all products','facebook','x','open in app','privacy','terms','policy'];"
         + "var tops=[];"
         + "function vis(e){return e.getClientRects().length>0;}"
         + "function isLine(e){return !!e&&(e.innerText||'')===''&&e.offsetHeight>0&&e.offsetHeight<=3;}"
