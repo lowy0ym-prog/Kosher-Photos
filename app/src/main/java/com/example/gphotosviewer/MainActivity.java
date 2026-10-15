@@ -301,8 +301,9 @@ public class MainActivity extends Activity {
         webView.getSettings().setDatabaseEnabled(true);
         webView.getSettings().setUseWideViewPort(true);
         webView.getSettings().setLoadWithOverviewMode(false);
-        webView.getSettings().setSupportZoom(false);
-        webView.getSettings().setBuiltInZoomControls(false);
+        // Pinch-to-zoom like a normal browser (the zoom stays when you let go).
+        webView.getSettings().setSupportZoom(true);
+        webView.getSettings().setBuiltInZoomControls(true);
         webView.getSettings().setDisplayZoomControls(false);
         webView.getSettings().setAllowFileAccess(false);
         // Let videos start when you tap them (WebView otherwise can refuse).
