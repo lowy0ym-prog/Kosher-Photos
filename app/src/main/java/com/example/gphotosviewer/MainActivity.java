@@ -226,6 +226,7 @@ public class MainActivity extends Activity {
         float density = getResources().getDisplayMetrics().density;
         if (refresh) {
             refreshing = true;
+            webView.getSettings().setCacheMode(WebSettings.LOAD_DEFAULT);
             showPull(64f * density, density, true);
             webView.reload();
             webView.postDelayed(new Runnable() {
@@ -242,6 +243,7 @@ public class MainActivity extends Activity {
     private void finishRefresh() {
         if (!refreshing) return;
         refreshing = false;
+        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
         hidePull();
     }
 
@@ -321,9 +323,10 @@ public class MainActivity extends Activity {
 
         // Cache: pages and photos already seen are kept and reused. With no
         // internet the saved copy is shown instead of an error.
-        webView.getSettings().setCacheMode(isOnline()
-                ? WebSettings.LOAD_DEFAULT
-                : WebSettings.LOAD_CACHE_ELSE_NETWORK);
+        // Saved photos/files are reused even when Google marks them as
+        // "expired"; only what is missing is downloaded. Pull-down refresh
+        // switches to fresh downloads for that one reload.
+        webView.getSettings().setCacheMode(WebSettings.LOAD_CACHE_ELSE_NETWORK);
 
         webView.addJavascriptInterface(new TopBridge(), "KP");
 
