@@ -550,9 +550,9 @@ public class MainActivity extends Activity {
     }
 
     // Back button. On a single photo it goes back normally. On any other
-    // page it skips past photo pages (so backing out of an album does not
-    // reopen the photo you just left) and leaves the app when there is
-    // no earlier page to return to.
+    // page it skips past photos and pages you opened from this one (so
+    // backing out of an album or Faces does not reopen what you just left)
+    // and leaves the app when there is no earlier page to return to.
     private boolean goBackSmart() {
         String current = webView.getUrl();
         if (current != null && current.contains("/photo/")) {
@@ -564,7 +564,19 @@ public class MainActivity extends Activity {
         }
         WebBackForwardList list = webView.copyBackForwardList();
         int idx = list.getCurrentIndex();
-        for (int i = idx - 1; i >= 0; i--) {
+        // If you already visited this same page earlier (for example the
+        // Faces list, then a face, then the in-page back arrow), everything
+        // opened after that first visit is skipped: back goes to the page
+        // before it.
+        int start = idx;
+        for (int j = 0; j < idx; j++) {
+            WebHistoryItem it = list.getItemAtIndex(j);
+            if (it != null && current != null && current.equals(it.getUrl())) {
+                start = j;
+                break;
+            }
+        }
+        for (int i = start - 1; i >= 0; i--) {
             WebHistoryItem item = list.getItemAtIndex(i);
             String u = item == null ? null : item.getUrl();
             if (u == null || !u.contains("photos.google.com")) continue;
