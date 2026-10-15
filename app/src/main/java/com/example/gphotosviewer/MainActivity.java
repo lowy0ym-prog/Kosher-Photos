@@ -21,7 +21,9 @@ import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
 import android.webkit.WebSettings;
 import android.webkit.ValueCallback;
+import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
+import android.webkit.WebHistoryItem;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -530,14 +532,38 @@ public class MainActivity extends Activity {
         CookieManager.getInstance().flush(); // keep the sign-in saved
     }
 
+    // Back button. On a single photo it goes back normally. On any other
+    // page it skips past photo pages (so backing out of an album does not
+    // reopen the photo you just left) and leaves the app when there is
+    // no earlier page to return to.
+    private boolean goBackSmart() {
+        String current = webView.getUrl();
+        if (current != null && current.contains("/photo/")) {
+            if (webView.canGoBack()) {
+                webView.goBack();
+                return true;
+            }
+            return false;
+        }
+        WebBackForwardList list = webView.copyBackForwardList();
+        int idx = list.getCurrentIndex();
+        for (int i = idx - 1; i >= 0; i--) {
+            WebHistoryItem item = list.getItemAtIndex(i);
+            String u = item == null ? null : item.getUrl();
+            if (u == null || !u.contains("photos.google.com")) continue;
+            if (u.contains("/photo/") || u.equals(current)) continue;
+            webView.goBackOrForward(i - idx);
+            return true;
+        }
+        return false;
+    }
+
     @Override
     public void onBackPressed() {
         if (customView != null) {
             leaveFullScreenVideo();
-        } else if (webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
+        } else if (!goBackSmart()) {
+            super.onBackPressed(); // nothing sensible to go back to: leave the app
         }
     }
 }
