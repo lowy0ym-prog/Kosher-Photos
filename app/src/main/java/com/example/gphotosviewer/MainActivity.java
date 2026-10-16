@@ -131,8 +131,34 @@ public class MainActivity extends Activity {
         + "if(D.style.transform===lastSet){D.style.transform=saved.f;}"
         + "D=null;"
         + "}"
-        + "function place(left){lastSet='translateX('+(left-base)+'px)';D.style.transform=lastSet;lastSet=D.style.transform;}"
+        + "function place(left){lastSet='translateX('+(left-base+0.01)+'px)';D.style.transform=lastSet;lastSet=D.style.transform;}"
         + "return {"
+        + "prime:function(){"
+        + "if(findDrawer())return 'ready';"
+        + "var b=document.querySelector(MENU);if(!b)return 'no button';"
+        + "var st=document.createElement('style');"
+        + "st.textContent='*{transition:none!important;animation:none!important}';"
+        + "document.head.appendChild(st);"
+        + "document.documentElement.style.opacity='0';"
+        + "b.click();"
+        + "setTimeout(function(){"
+        + "try{"
+        + "var d=findDrawer();"
+        + "if(d){"
+        + "var r=d.getBoundingClientRect();"
+        + "if(r.right>8){"
+        + "var el=document.elementFromPoint(window.innerWidth-6,window.innerHeight/2);"
+        + "if(el&&!el.closest('a[href*=\"/photo/\"]'))el.click();"
+        + "}"
+        + "}"
+        + "}catch(e){}"
+        + "setTimeout(function(){"
+        + "document.documentElement.style.opacity='';"
+        + "if(st.parentNode)st.parentNode.removeChild(st);"
+        + "},120);"
+        + "},200);"
+        + "return 'priming';"
+        + "},"
         + "start:function(mode){"
         + "cleanup();"
         + "var d=findDrawer();if(!d)return 'menu not found';"
@@ -168,6 +194,7 @@ public class MainActivity extends Activity {
         + "}"
         + "};"
         + "})();"
+        + "if(!window.__kpPrimed){window.__kpPrimed=1;setTimeout(function(){try{window.__kpDrag.prime();}catch(e){}},3500);}"
         + "window.__kpDrawer=function(mode){"
         + "  var open=false,w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false),n;"
         + "  while((n=w.nextNode())){"
@@ -508,6 +535,10 @@ public class MainActivity extends Activity {
                                                     dragActive = value != null && value.contains("true");
                                                     if (!dragActive && value != null && value.contains("menu")) {
                                                         toast("Swipe: " + value.replace("\"", ""));
+                                                        if (value.contains("not found")) {
+                                                            webView.evaluateJavascript(
+                                                                    "window.__kpDrag&&window.__kpDrag.prime()", null);
+                                                        }
                                                     }
                                                 }
                                             });
