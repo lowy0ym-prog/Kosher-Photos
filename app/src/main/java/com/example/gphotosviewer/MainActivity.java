@@ -53,8 +53,6 @@ public class MainActivity extends Activity {
     private long downTime = 0L;
     private boolean edgeStart = false;
     private boolean drawerDone = false;
-    private String dragMode = null;
-    private boolean dragActive = false;
 
     public class TopBridge {
         @JavascriptInterface
@@ -108,93 +106,6 @@ public class MainActivity extends Activity {
     private static final String HIDE_BANNERS_JS =
         "(function(){"
         + "if(window.__kpBannerHider){window.__kpBannerHider();return;}"
-        + "window.__kpDrag=(function(){"
-        + "var D=null,W=0,base=0,saved=null,lastSet='';"
-        + "var MENU='[aria-label=\"Main menu\"],[aria-label=\"Menu\"],[aria-label=\"Open menu\"],[aria-label=\"Navigation menu\"]';"
-        + "function findDrawer(){"
-        + "var w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false),n;"
-        + "while((n=w.nextNode())){"
-        + "if((n.nodeValue||'').trim().toLowerCase()==='storage'&&n.parentElement){"
-        + "var e=n.parentElement;"
-        + "while(e&&e!==document.body){"
-        + "var cs=getComputedStyle(e),r=e.getBoundingClientRect();"
-        + "if((cs.position==='fixed'||cs.position==='absolute')&&r.height>=window.innerHeight*0.7&&r.width<window.innerWidth*0.97&&r.width>100){return e;}"
-        + "e=e.parentElement;"
-        + "}"
-        + "}"
-        + "}"
-        + "return null;"
-        + "}"
-        + "function cleanup(){"
-        + "if(!D)return;"
-        + "D.style.transition=saved.t;D.style.visibility=saved.v;"
-        + "if(D.style.transform===lastSet){D.style.transform=saved.f;}"
-        + "D=null;"
-        + "}"
-        + "function place(left){lastSet='translateX('+(left-base+0.01)+'px)';D.style.transform=lastSet;lastSet=D.style.transform;}"
-        + "return {"
-        + "prime:function(){"
-        + "if(findDrawer())return 'ready';"
-        + "var b=document.querySelector(MENU);if(!b)return 'no button';"
-        + "var st=document.createElement('style');"
-        + "st.textContent='*{transition:none!important;animation:none!important}';"
-        + "document.head.appendChild(st);"
-        + "document.documentElement.style.opacity='0';"
-        + "b.click();"
-        + "setTimeout(function(){"
-        + "try{"
-        + "var d=findDrawer();"
-        + "if(d){"
-        + "var r=d.getBoundingClientRect();"
-        + "if(r.right>8){"
-        + "var el=document.elementFromPoint(window.innerWidth-6,window.innerHeight/2);"
-        + "if(el&&!el.closest('a[href*=\"/photo/\"]'))el.click();"
-        + "}"
-        + "}"
-        + "}catch(e){}"
-        + "setTimeout(function(){"
-        + "document.documentElement.style.opacity='';"
-        + "if(st.parentNode)st.parentNode.removeChild(st);"
-        + "},120);"
-        + "},200);"
-        + "return 'priming';"
-        + "},"
-        + "start:function(mode){"
-        + "cleanup();"
-        + "var d=findDrawer();if(!d)return 'menu not found';"
-        + "var r=d.getBoundingClientRect(),cs=getComputedStyle(d);"
-        + "var isOpen=r.right>8&&r.left>-r.width*0.5;"
-        + "if((mode==='open'&&isOpen)||(mode==='close'&&!isOpen))return 'menu already '+(isOpen?'open':'closed');"
-        + "var m=new DOMMatrix(cs.transform);"
-        + "D=d;W=r.width;base=r.left-m.m41;"
-        + "saved={t:D.style.transition,f:D.style.transform,v:D.style.visibility};"
-        + "D.style.transition='none';D.style.visibility='visible';"
-        + "place(mode==='open'?-W:0);"
-        + "return true;"
-        + "},"
-        + "move:function(mode,frac){"
-        + "if(!D)return;"
-        + "var px=frac*window.innerWidth;"
-        + "place(mode==='open'?Math.max(0,Math.min(px,W))-W:Math.max(-W,Math.min(0,px)));"
-        + "},"
-        + "end:function(mode,frac){"
-        + "if(!D)return;"
-        + "var px=frac*window.innerWidth,commit=Math.abs(px)>W*0.35;"
-        + "D.style.transition='transform 180ms ease-out';"
-        + "var open=(mode==='open')?commit:!commit;"
-        + "place(open?0:-W);"
-        + "setTimeout(function(){"
-        + "if(mode==='open'&&commit){var b=document.querySelector(MENU);if(b)b.click();}"
-        + "if(mode==='close'&&commit){"
-        + "var el=document.elementFromPoint(window.innerWidth-6,window.innerHeight/2);"
-        + "if(el&&!el.closest('a[href*=\"/photo/\"]'))el.click();"
-        + "}"
-        + "setTimeout(cleanup,320);"
-        + "},200);"
-        + "}"
-        + "};"
-        + "})();"
-        + "if(!window.__kpPrimed){window.__kpPrimed=1;setTimeout(function(){try{window.__kpDrag.prime();}catch(e){}},3500);}"
         + "window.__kpDrawer=function(mode){"
         + "  var open=false,w=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT,null,false),n;"
         + "  while((n=w.nextNode())){"
@@ -506,54 +417,24 @@ public class MainActivity extends Activity {
                         downTime = ev.getEventTime();
                         edgeStart = downX < 28f * density;
                         drawerDone = false;
-                        dragMode = null;
-                        dragActive = false;
                     } else if (action == MotionEvent.ACTION_MOVE) {
                         // Side menu: swipe in from the left edge to open it,
-                        // swipe left to close it. The menu follows your finger.
-                        if (ev.getPointerCount() == 1) {
+                        // swipe left to close it.
+                        if (!drawerDone && ev.getPointerCount() == 1) {
                             String cur = webView.getUrl();
                             boolean onPhoto = cur != null && cur.contains("/photo/");
                             float dx = ev.getX() - downX;
                             float ady = Math.abs(ev.getRawY() - pullStartY);
-                            if (dragMode == null && !drawerDone && !onPhoto) {
-                                String mode = null;
-                                if (edgeStart && dx > 14f * density && ady < dx * 0.6f) {
-                                    mode = "open";
-                                } else if (dx < -14f * density && ady < -dx * 0.6f) {
-                                    mode = "close";
-                                }
-                                if (mode != null) {
-                                    dragMode = mode;
-                                    dragActive = false;
-                                    pullTracking = false;
-                                    webView.evaluateJavascript(
-                                            "window.__kpDrag?String(window.__kpDrag.start('" + mode + "')):'menu script missing'",
-                                            new ValueCallback<String>() {
-                                                @Override
-                                                public void onReceiveValue(String value) {
-                                                    dragActive = value != null && value.contains("true");
-                                                    if (!dragActive && value != null && value.contains("menu")) {
-                                                        toast("Swipe: " + value.replace("\"", ""));
-                                                        if (value.contains("not found")) {
-                                                            webView.evaluateJavascript(
-                                                                    "window.__kpDrag&&window.__kpDrag.prime()", null);
-                                                        }
-                                                    }
-                                                }
-                                            });
-                                }
-                            } else if (dragMode != null) {
-                                float frac = dx / (float) Math.max(1, webView.getWidth());
-                                if (dragActive) {
-                                    webView.evaluateJavascript("window.__kpDrag.move('" + dragMode
-                                            + "'," + frac + ")", null);
-                                } else if (!drawerDone && Math.abs(dx) > 48f * density) {
-                                    // The page's menu could not be dragged: just open/close it.
-                                    drawerDone = true;
-                                    webView.evaluateJavascript("window.__kpDrawer&&window.__kpDrawer('"
-                                            + dragMode + "')", null);
-                                }
+                            if (!onPhoto && edgeStart && dx > 48f * density && ady < dx * 0.6f) {
+                                drawerDone = true;
+                                pullTracking = false;
+                                webView.evaluateJavascript(
+                                        "window.__kpDrawer&&window.__kpDrawer('open')", null);
+                            } else if (!onPhoto && dx < -70f * density && ady < -dx * 0.6f) {
+                                drawerDone = true;
+                                pullTracking = false;
+                                webView.evaluateJavascript(
+                                        "window.__kpDrawer&&window.__kpDrawer('close')", null);
                             }
                         }
                         if (!pullTracking) return false;
@@ -579,17 +460,6 @@ public class MainActivity extends Activity {
                         }
                     } else if (action == MotionEvent.ACTION_UP
                             || action == MotionEvent.ACTION_CANCEL) {
-                        if (dragMode != null) {
-                            if (dragActive) {
-                                float frac = (ev.getX() - downX)
-                                        / (float) Math.max(1, webView.getWidth());
-                                if (action == MotionEvent.ACTION_CANCEL) frac = 0f;
-                                webView.evaluateJavascript("window.__kpDrag.end('" + dragMode
-                                        + "'," + frac + ")", null);
-                            }
-                            dragMode = null;
-                            dragActive = false;
-                        }
                         if (pulling) {
                             endPull(action == MotionEvent.ACTION_UP
                                     && webView.getTranslationY() >= 64f * density);
