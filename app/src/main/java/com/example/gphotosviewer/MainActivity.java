@@ -364,6 +364,8 @@ public class MainActivity extends Activity {
         + "})();";
 
     private boolean immersive = false;
+    private boolean swipeMulti = false;
+    private float baseScale = 0f;
     private long lastTapTime = 0;
     private float tapX, tapY;
     private long tapDownTime;
@@ -474,7 +476,9 @@ public class MainActivity extends Activity {
             public boolean onTouch(View v, MotionEvent ev) {
                 try {
                     int action = ev.getActionMasked();
+                    if (ev.getPointerCount() > 1) swipeMulti = true;
                     if (action == MotionEvent.ACTION_DOWN) {
+                        swipeMulti = false;
                         pullStartY = ev.getRawY();
                         pullTracking = !refreshing;
                         pulling = false;
@@ -523,6 +527,7 @@ public class MainActivity extends Activity {
                             if (dy < -slop) {
                                 pullTracking = false; // scrolling up: not a pull
                             } else if (dy > slop && touchAtTop
+                                    && !(webView.getUrl() != null && webView.getUrl().contains("/photo/"))
                                     && ev.getEventTime() - downTime > 100
                                     && !webView.canScrollVertically(-1)) {
                                 pulling = true;
@@ -558,6 +563,22 @@ public class MainActivity extends Activity {
                                     };
                                     webView.postDelayed(pendingTap, 320);
                                 }
+                            }
+                        }
+                        // Swipe down on an open photo / video: close it, like a gallery app.
+                        if (action == MotionEvent.ACTION_UP && !swipeMulti && !pulling
+                                && curUrl != null && curUrl.contains("/photo/")) {
+                            float sdy = ev.getRawY() - pullStartY;
+                            float sdx = ev.getX() - downX;
+                            boolean zoomed = baseScale > 0 && webView.getScale() > baseScale * 1.08f;
+                            if (!zoomed && sdy > 110f * density && Math.abs(sdx) < sdy * 0.6f
+                                    && ev.getEventTime() - downTime < 900) {
+                                if (pendingTap != null) {
+                                    webView.removeCallbacks(pendingTap);
+                                    pendingTap = null;
+                                }
+                                exitPhotoFullScreen();
+                                if (!goBackSmart()) goHome(webView);
                             }
                         }
                         tapCandidate = false;
@@ -615,6 +636,12 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onScaleChanged(WebView view, float oldScale, float newScale) {
+                if (baseScale <= 0) baseScale = Math.min(oldScale, newScale);
+                else if (newScale < baseScale) baseScale = newScale;
+            }
+
+            @Override
             public void onPageStarted(WebView view, String url, Bitmap favicon) {
                 progress.setVisibility(View.VISIBLE);
             }
@@ -622,6 +649,7 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 progress.setVisibility(View.GONE);
+                baseScale = view.getScale();
                 view.setVisibility(View.VISIBLE);
                 finishRefresh();
                 if (url != null && url.contains("photos.google.com")) {
