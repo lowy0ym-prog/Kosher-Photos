@@ -371,7 +371,7 @@ public class MainActivity extends Activity {
     private Runnable pendingTap;
 
     @SuppressWarnings("deprecation")
-    private void setImmersive(boolean on) {
+    private void setPhotoImmersive(boolean on) {
         immersive = on;
         View d = getWindow().getDecorView();
         d.setSystemUiVisibility(on
@@ -383,7 +383,7 @@ public class MainActivity extends Activity {
 
     private void exitPhotoFullScreen() {
         if (!immersive) return;
-        setImmersive(false);
+        setPhotoImmersive(false);
         webView.evaluateJavascript("window.__kpFSClear&&window.__kpFSClear()", null);
     }
 
@@ -394,7 +394,7 @@ public class MainActivity extends Activity {
                 new ValueCallback<String>() {
                     @Override
                     public void onReceiveValue(String v) {
-                        if (v != null && v.contains("ok")) setImmersive(turnOn);
+                        if (v != null && v.contains("ok")) setPhotoImmersive(turnOn);
                     }
                 });
     }
