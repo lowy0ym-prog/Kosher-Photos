@@ -378,7 +378,12 @@ public class MainActivity extends Activity {
         // (turned on only while a single photo is open, see updateZoom)
         updateZoom(null);
         webView.getSettings().setDisplayZoomControls(false);
-        webView.getSettings().setAllowFileAccess(false);
+        // Chosen photos for upload are read through the phone's file system;
+        // the page itself can never open local files (no file:// access from pages).
+        webView.getSettings().setAllowFileAccess(true);
+        webView.getSettings().setAllowContentAccess(true);
+        webView.getSettings().setAllowFileAccessFromFileURLs(false);
+        webView.getSettings().setAllowUniversalAccessFromFileURLs(false);
         // Let videos start when you tap them (WebView otherwise can refuse).
         webView.getSettings().setMediaPlaybackRequiresUserGesture(false);
 
@@ -676,6 +681,13 @@ public class MainActivity extends Activity {
                         WebChromeClient.FileChooserParams.parseResult(resultCode, data);
                 filePathCallback.onReceiveValue(results);
                 filePathCallback = null;
+                if (resultCode == RESULT_OK) {
+                    if (results == null || results.length == 0) {
+                        toast("The picker returned no photo. Try choosing from Gallery or Files.");
+                    } else {
+                        toast("Sending " + results.length + " file(s) to Google Photos...");
+                    }
+                }
             }
             return;
         }
