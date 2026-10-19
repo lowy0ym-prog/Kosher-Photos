@@ -535,7 +535,13 @@ public class MainActivity extends Activity {
                 }
                 filePathCallback = callback;
                 try {
-                    startActivityForResult(params.createIntent(), FILE_CHOOSER_REQUEST);
+                    Intent pick = new Intent(Intent.ACTION_GET_CONTENT);
+                    pick.addCategory(Intent.CATEGORY_OPENABLE);
+                    pick.setType("*/*");
+                    pick.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
+                    pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    startActivityForResult(Intent.createChooser(pick, "Choose photos or videos"),
+                            FILE_CHOOSER_REQUEST);
                 } catch (ActivityNotFoundException e) {
                     filePathCallback = null;
                     toast("No photo picker found on this phone.");
@@ -673,17 +679,49 @@ public class MainActivity extends Activity {
         webView.loadUrl(START_URL);
     }
 
+    // Reads the chosen photos from every place a picker may put them.
+    private Uri[] readPickedUris(int resultCode, Intent data) {
+        if (resultCode != RESULT_OK || data == null) return null;
+        java.util.ArrayList<Uri> list = new java.util.ArrayList<>();
+        android.content.ClipData clip = data.getClipData();
+        if (clip != null) {
+            for (int i = 0; i < clip.getItemCount(); i++) {
+                Uri u = clip.getItemAt(i).getUri();
+                if (u != null) list.add(u);
+            }
+        }
+        if (list.isEmpty() && data.getData() != null) list.add(data.getData());
+        if (list.isEmpty()) {
+            try {
+                Object o = data.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (o instanceof Uri) list.add((Uri) o);
+            } catch (Exception ignored) {
+            }
+        }
+        if (list.isEmpty()) {
+            try {
+                java.util.ArrayList<Uri> l = data.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (l != null) list.addAll(l);
+            } catch (Exception ignored) {
+            }
+        }
+        return list.isEmpty() ? null : list.toArray(new Uri[0]);
+    }
+
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (filePathCallback != null) {
-                Uri[] results =
-                        WebChromeClient.FileChooserParams.parseResult(resultCode, data);
+                Uri[] results = readPickedUris(resultCode, data);
                 filePathCallback.onReceiveValue(results);
                 filePathCallback = null;
                 if (resultCode == RESULT_OK) {
                     if (results == null || results.length == 0) {
-                        toast("The picker returned no photo. Try choosing from Gallery or Files.");
+                        String d = (data == null) ? "no data"
+                                : ("data=" + data.getData() + " clip="
+                                + (data.getClipData() == null ? "none" : data.getClipData().getItemCount())
+                                + " extras=" + (data.getExtras() == null ? "none" : data.getExtras().keySet()));
+                        toast("The picker returned no photo (" + d + ")");
                     } else {
                         toast("Sending " + results.length + " file(s) to Google Photos...");
                     }
