@@ -339,7 +339,68 @@ public class MainActivity extends Activity {
         view.loadUrl(HOME_URL);
     }
 
+    // Full screen for a single photo: tap the middle to hide / show the bars.
+    private static final String FS_JS =
+          "(function(){if(window.__kpFS)return;"
+        + "var st=document.createElement('style');st.textContent='[data-kpfs]{visibility:hidden!important}';"
+        + "document.head.appendChild(st);"
+        + "function clr(){document.querySelectorAll('[data-kpfs]').forEach(function(e){e.removeAttribute('data-kpfs');});}"
+        + "function app(){var W=innerWidth,H=innerHeight;"
+        + " document.querySelectorAll('body *').forEach(function(e){"
+        + "  var cs=getComputedStyle(e);"
+        + "  if(cs.position!=='fixed'&&cs.position!=='absolute'&&cs.position!=='sticky')return;"
+        + "  var r=e.getBoundingClientRect();if(r.width<1||r.height<1)return;"
+        + "  var top=r.top<=6&&r.height<=170&&r.width>=W*0.5;"
+        + "  var bot=r.bottom>=H-6&&r.height<=220&&r.width>=W*0.5;"
+        + "  var side=r.width<=110&&r.height<=140&&(r.left<=12||r.right>=W-12)&&r.top>H*0.25&&r.bottom<H*0.75;"
+        + "  if((top||bot||side)&&!e.querySelector('video'))e.setAttribute('data-kpfs','1');"
+        + " });}"
+        + "window.__kpFS=function(xf,yf,on){"
+        + " var t=document.elementFromPoint(innerWidth*xf,innerHeight*yf);"
+        + " if(t&&t.closest&&t.closest('video,input,button,[role=slider]'))return 'skip';"
+        + " if(on)app();else clr();return 'ok';};"
+        + "window.__kpFSApply=function(){app();};"
+        + "window.__kpFSClear=clr;"
+        + "})();";
+
+    private boolean immersive = false;
+    private long lastTapTime = 0;
+    private float tapX, tapY;
+    private long tapDownTime;
+    private boolean tapCandidate = false;
+    private Runnable pendingTap;
+
+    @SuppressWarnings("deprecation")
+    private void setImmersive(boolean on) {
+        immersive = on;
+        View d = getWindow().getDecorView();
+        d.setSystemUiVisibility(on
+                ? (View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)
+                : View.SYSTEM_UI_FLAG_VISIBLE);
+    }
+
+    private void exitPhotoFullScreen() {
+        if (!immersive) return;
+        setImmersive(false);
+        webView.evaluateJavascript("window.__kpFSClear&&window.__kpFSClear()", null);
+    }
+
+    // A quick tap in the middle of an open photo: toggle full screen.
+    private void photoTap(final float xf, final float yf) {
+        final boolean turnOn = !immersive;
+        webView.evaluateJavascript("window.__kpFS?window.__kpFS(" + xf + "," + yf + "," + turnOn + "):'none'",
+                new ValueCallback<String>() {
+                    @Override
+                    public void onReceiveValue(String v) {
+                        if (v != null && v.contains("ok")) setImmersive(turnOn);
+                    }
+                });
+    }
+
     private void injectBannerHider(WebView view) {
+        view.evaluateJavascript(FS_JS, null);
         view.evaluateJavascript(HIDE_BANNERS_JS, null);
     }
 
@@ -422,7 +483,16 @@ public class MainActivity extends Activity {
                         downTime = ev.getEventTime();
                         edgeStart = downX < 28f * density;
                         drawerDone = false;
+                        tapCandidate = true;
+                        tapX = ev.getX();
+                        tapY = ev.getY();
+                        tapDownTime = ev.getEventTime();
                     } else if (action == MotionEvent.ACTION_MOVE) {
+                        if (ev.getPointerCount() > 1
+                                || Math.abs(ev.getX() - tapX) > slop
+                                || Math.abs(ev.getY() - tapY) > slop) {
+                            tapCandidate = false;
+                        }
                         // Side menu: swipe in from the left edge to open it,
                         // swipe left to close it.
                         if (!drawerDone && ev.getPointerCount() == 1) {
@@ -465,6 +535,32 @@ public class MainActivity extends Activity {
                         }
                     } else if (action == MotionEvent.ACTION_UP
                             || action == MotionEvent.ACTION_CANCEL) {
+                        String curUrl = webView.getUrl();
+                        if (action == MotionEvent.ACTION_UP && tapCandidate
+                                && curUrl != null && curUrl.contains("/photo/")
+                                && ev.getEventTime() - tapDownTime < 300) {
+                            final float xf = tapX / Math.max(1, webView.getWidth());
+                            final float yf = tapY / Math.max(1, webView.getHeight());
+                            if (xf > 0.2f && xf < 0.8f && yf > 0.15f && yf < 0.85f) {
+                                long now = ev.getEventTime();
+                                if (pendingTap != null) {
+                                    webView.removeCallbacks(pendingTap); // double tap = zoom, not full screen
+                                    pendingTap = null;
+                                    lastTapTime = 0;
+                                } else {
+                                    lastTapTime = now;
+                                    pendingTap = new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            pendingTap = null;
+                                            photoTap(xf, yf);
+                                        }
+                                    };
+                                    webView.postDelayed(pendingTap, 320);
+                                }
+                            }
+                        }
+                        tapCandidate = false;
                         if (pulling) {
                             endPull(action == MotionEvent.ACTION_UP
                                     && webView.getTranslationY() >= 64f * density);
@@ -499,6 +595,16 @@ public class MainActivity extends Activity {
             public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
                 if (url == null) return;
                 updateZoom(url);
+                if (!url.contains("/photo/")) {
+                    exitPhotoFullScreen();
+                } else if (immersive) {
+                    view.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            webView.evaluateJavascript("window.__kpFSApply&&window.__kpFSApply()", null);
+                        }
+                    }, 500);
+                }
                 if (!isAllowed(url)) {
                     toast("Only Google Photos can be opened in this app.");
                     goHome(view);
@@ -803,6 +909,8 @@ public class MainActivity extends Activity {
     public void onBackPressed() {
         if (customView != null) {
             leaveFullScreenVideo();
+        } else if (immersive) {
+            exitPhotoFullScreen();
         } else if (!goBackSmart()) {
             super.onBackPressed(); // sign-in page: leave the app
         }
