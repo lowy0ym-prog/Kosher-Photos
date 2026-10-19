@@ -540,8 +540,7 @@ public class MainActivity extends Activity {
                     pick.setType("*/*");
                     pick.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"image/*", "video/*"});
                     pick.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-                    startActivityForResult(Intent.createChooser(pick, "Choose photos or videos"),
-                            FILE_CHOOSER_REQUEST);
+                    startActivityForResult(pick, FILE_CHOOSER_REQUEST);
                 } catch (ActivityNotFoundException e) {
                     filePathCallback = null;
                     toast("No photo picker found on this phone.");
@@ -712,6 +711,14 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         if (requestCode == FILE_CHOOSER_REQUEST) {
             if (filePathCallback != null) {
+                // Make sure the picker is closed and this app is in front again.
+                try {
+                    Intent back = new Intent(this, MainActivity.class);
+                    back.addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+                            | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(back);
+                } catch (Exception ignored) {
+                }
                 Uri[] results = readPickedUris(resultCode, data);
                 filePathCallback.onReceiveValue(results);
                 filePathCallback = null;
