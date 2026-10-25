@@ -47,6 +47,7 @@ public class MainActivity extends Activity {
     private final ProxyFetcher.ErrorSink proxyErrors = new ProxyFetcher.ErrorSink() {
         @Override
         public void onError(final String message) {
+            ProxyConfig.saveLastError(MainActivity.this, message);
             long now = System.currentTimeMillis();
             if (now - lastProxyToast < 10000L) return; // at most one message per 10 seconds
             lastProxyToast = now;

@@ -109,6 +109,12 @@ public class SettingsActivity extends Activity {
         status = label("", 15f, 16);
         root.addView(status);
 
+        // The latest problem the app had with the proxy (helps find what is wrong).
+        String last = ProxyConfig.loadLastError(this);
+        if (last != null && !last.isEmpty()) {
+            root.addView(label("Last proxy problem: " + last, 14f, 20));
+        }
+
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
         scroll.addView(root);

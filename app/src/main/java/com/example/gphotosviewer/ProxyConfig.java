@@ -46,6 +46,18 @@ final class ProxyConfig {
                 .apply();
     }
 
+    private static final String K_LAST_ERROR = "last_error";
+
+    /** Remembers the latest proxy problem so Proxy settings can show it. */
+    static void saveLastError(Context c, String message) {
+        c.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit().putString(K_LAST_ERROR, message).apply();
+    }
+
+    static String loadLastError(Context c) {
+        return c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(K_LAST_ERROR, "");
+    }
+
     /** True only when the toggle is on and both the address and key are filled in. */
     boolean isReady() {
         return enabled && !base.isEmpty() && key.length() >= MIN_KEY_LENGTH;

@@ -87,12 +87,30 @@ final class ProxyFetcher {
 
             int code = c.getResponseCode();
             if (code != 200 && code != 206) {
+                // The Worker explains itself in a short text, for example
+                // "Google answered 403". Show it so a problem can be found.
+                String detail = "";
+                try {
+                    InputStream es = c.getErrorStream();
+                    if (es != null) {
+                        byte[] buf = new byte[160];
+                        int n = es.read(buf);
+                        es.close();
+                        if (n > 0) {
+                            detail = new String(buf, 0, n, "UTF-8").trim().replaceAll("\\s+", " ");
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                String host = req.getUrl().getHost();
                 if (code == 401) {
                     sink.onError("Proxy: wrong access key. Check Proxy settings.");
-                } else if (code == 500) {
+                } else if (code == 500 && detail.startsWith("Not set up")) {
                     sink.onError("Proxy is not set up (missing ACCESS_KEY secret).");
                 } else if (code != 404) {
-                    sink.onError("Proxy error (" + code + ").");
+                    sink.onError("Proxy error (" + code + ")"
+                            + (detail.isEmpty() ? "" : ": " + detail)
+                            + (host == null ? "" : " [" + host + "]"));
                 }
                 c.disconnect();
                 return failure(code == 404 ? 404 : 502, code == 404 ? "Not Found" : "Bad Gateway");
