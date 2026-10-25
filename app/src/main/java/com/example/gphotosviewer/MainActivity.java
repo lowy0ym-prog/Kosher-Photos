@@ -10,6 +10,7 @@ import android.graphics.Bitmap;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.net.http.HttpResponseCache;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Message;
@@ -26,15 +27,37 @@ import android.webkit.WebBackForwardList;
 import android.webkit.WebChromeClient;
 import android.webkit.WebHistoryItem;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.FrameLayout;
 import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import java.io.File;
+
 public class MainActivity extends Activity {
 
     private static final int FILE_CHOOSER_REQUEST = 1001;
+
+    // "Stream via proxy" (see ProxyFetcher). cfgSig lets the page reload by
+    // itself after the proxy settings change.
+    private String cfgSig = "";
+    private volatile long lastProxyToast = 0L;
+    private final ProxyFetcher.ErrorSink proxyErrors = new ProxyFetcher.ErrorSink() {
+        @Override
+        public void onError(final String message) {
+            long now = System.currentTimeMillis();
+            if (now - lastProxyToast < 10000L) return; // at most one message per 10 seconds
+            lastProxyToast = now;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    toast(message);
+                }
+            });
+        }
+    };
 
     private WebView webView;
     private ProgressBar progress;
@@ -428,6 +451,14 @@ public class MainActivity extends Activity {
         webView = (WebView) findViewById(R.id.webview);
         progress = (ProgressBar) findViewById(R.id.progress);
 
+        // Pictures that came through the proxy are kept on the phone, so
+        // looking at them again does not ask the proxy a second time.
+        try {
+            HttpResponseCache.install(new File(getCacheDir(), "proxy-http"), 150L * 1024L * 1024L);
+        } catch (Exception ignored) {
+        }
+        cfgSig = ProxyConfig.load(this).signature();
+
         // Cookies on so your login session is remembered between launches.
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
@@ -596,6 +627,25 @@ public class MainActivity extends Activity {
         });
 
         webView.setWebViewClient(new WebViewClient() {
+            // "Stream via proxy": pictures from Google's picture hosts are
+            // fetched through your own proxy instead, so the phone never
+            // contacts those (blocked) hosts directly.
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                try {
+                    if (!request.isForMainFrame()
+                            && "GET".equalsIgnoreCase(request.getMethod())
+                            && ProxyFetcher.shouldProxy(request.getUrl())) {
+                        ProxyConfig cfg = ProxyConfig.load(MainActivity.this);
+                        if (cfg.isReady()) {
+                            return ProxyFetcher.fetch(cfg, request, proxyErrors);
+                        }
+                    }
+                } catch (Exception ignored) {
+                }
+                return super.shouldInterceptRequest(view, request);
+            }
+
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
@@ -786,12 +836,20 @@ public class MainActivity extends Activity {
                 }
                 try {
                     String fileName = URLUtil.guessFileName(url, contentDisposition, mimetype);
-                    DownloadManager.Request request =
-                            new DownloadManager.Request(Uri.parse(url));
+                    // With "Stream via proxy" on, files from Google's picture
+                    // hosts are downloaded through the proxy (no cookies sent).
+                    ProxyConfig pc = ProxyConfig.load(MainActivity.this);
+                    boolean viaProxy = pc.isReady() && ProxyFetcher.shouldProxy(Uri.parse(url));
+                    DownloadManager.Request request = new DownloadManager.Request(
+                            Uri.parse(viaProxy ? ProxyFetcher.proxyUrl(pc, url) : url));
                     request.setMimeType(mimetype);
-                    String cookies = CookieManager.getInstance().getCookie(url);
-                    if (cookies != null) {
-                        request.addRequestHeader("Cookie", cookies);
+                    if (viaProxy) {
+                        request.addRequestHeader("X-Access-Key", pc.key);
+                    } else {
+                        String cookies = CookieManager.getInstance().getCookie(url);
+                        if (cookies != null) {
+                            request.addRequestHeader("Cookie", cookies);
+                        }
                     }
                     request.addRequestHeader("User-Agent", userAgent);
                     request.setTitle(fileName);
@@ -871,6 +929,18 @@ public class MainActivity extends Activity {
             return;
         }
         super.onActivityResult(requestCode, resultCode, data);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Back from the Proxy settings with something changed: reload so the
+        // pictures are fetched the new way.
+        String sig = ProxyConfig.load(this).signature();
+        if (!sig.equals(cfgSig)) {
+            cfgSig = sig;
+            if (webView != null) webView.reload();
+        }
     }
 
     @Override

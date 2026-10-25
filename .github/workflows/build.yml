@@ -2,7 +2,8 @@ name: Build APK
 
 on:
   push:
-    branches: [ main ]
+    # "proxy-*" branches are built too, so a change can be checked before it goes to main.
+    branches: [ main, 'proxy-*' ]
   workflow_dispatch:
 
 jobs:
@@ -26,7 +27,15 @@ jobs:
           gradle-version: '8.5'
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --stacktrace 2>&1 | tee build.log
+
+      # If the build fails, show the first errors right on the run page.
+      - name: Show build errors
+        if: failure()
+        run: |
+          grep -E "error|What went wrong|Execution failed|AAPT" -A2 build.log | head -40 | while IFS= read -r line; do echo "::error::$line"; done
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_proxy_short">Proxy settings</string>
+    <string name="shortcut_proxy_long">Photo proxy settings</string>
+</resources>

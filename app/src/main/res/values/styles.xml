@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light look for the Proxy settings screen (dark version is in values-night). -->
+    <style name="SettingsTheme" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

@@ -10,7 +10,7 @@ android {
         targetSdk 34
         // Goes up with every GitHub build so each new APK installs over the old one.
         versionCode Integer.parseInt(System.getenv('GITHUB_RUN_NUMBER') ?: '1')
-        versionName "1.0"
+        versionName "1.1"
     }
 
     // The same signing key for every build, so a new APK can be installed
