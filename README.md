@@ -15,10 +15,11 @@ To rebuild any time: Actions > Build APK > Run workflow.
 
 Google Photos loads its pictures from `googleusercontent.com`, the same address Google Maps uses for place photos. If you block that address in NextDNS, Google Photos goes blank too.
 
-With **Stream via proxy** on, the app asks **your own proxy** for each Google picture instead. The phone then only talks to your proxy address, so NextDNS can keep `googleusercontent.com` blocked for every other app.
+With **Stream via proxy** on, the app opens a small **album viewer on your own Cloudflare Worker**. You paste a *link-shared* Google Photos album, the Worker fetches the pictures (no Google sign-in) and serves them from your Worker address. The phone only talks to your Worker, so NextDNS can keep `googleusercontent.com` blocked for every other app.
 
-**What it covers:** pictures and videos that the Google Photos pages load from Google's picture hosts (`googleusercontent.com`, `usercontent.google.com`, `ggpht.com`), and downloads from those hosts.
-**What it does not cover:** the Google Photos page itself and its scripts still load from `photos.google.com` and `www.gstatic.com`. Do not block those two for this app. It also does not hide anything: it only changes where pictures come from.
+**Works:** albums shared by link (`photos.app.goo.gl/...` or `photos.google.com/share/...`), including friends' albums.
+**Does not work:** your private library (Google needs your sign-in for those pictures; the proxy never sends cookies). To see your own photos, put them in an album on an unfiltered device and share it by link.
+**Untested by me against live Google:** whether Google's album pages still list their pictures the way the viewer expects. If an album shows "No photos found", tell me.
 
 ### Set up the proxy (free, about 10 minutes, works from a phone)
 
@@ -34,7 +35,8 @@ Cloudflare renames menu items now and then, so labels may differ slightly.
 
 1. Long-press the Kosher Photos icon and tap **Proxy settings**. If your launcher does not show it, ask me and I will add a button inside the app.
 2. Enter the proxy address and the access key, tap **Test connection** (it should say "Connected"), switch **Stream via proxy** on, tap **Save**.
-3. The page reloads and pictures now come through your proxy.
+3. The app reloads into the album viewer (it signs in with your key automatically). Paste an album link and tap Open.
+4. Switch the proxy off in Proxy settings to go back to normal Google Photos.
 
 ### Check it really works
 
@@ -57,7 +59,7 @@ If pictures go blank after you block it, the logs will show which other Google a
 
 ### Check the proxy code
 
-`node worker/test.mjs` runs 45 checks on the Worker (needs Node 18 or newer). Google is replaced by fake answers, so nothing leaves your computer.
+`node worker/test.mjs` runs 65 checks on the Worker (needs Node 18 or newer). Google is replaced by fake answers, so nothing leaves your computer.
 
 ## Changing which pages are blocked
 

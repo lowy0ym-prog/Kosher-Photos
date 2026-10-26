@@ -52,8 +52,10 @@ public class SettingsActivity extends Activity {
 
         root.addView(label("Stream via proxy", 24f, 0));
         root.addView(label("Turn on if your DNS filter blocks googleusercontent.com. "
-                + "Photos then come through your own proxy address instead, "
-                + "so the filter can stay on for every other app.", 15f, 8));
+                + "The app then opens an album viewer on your own proxy. Paste a "
+                + "link-shared Google Photos album and its pictures come through "
+                + "your proxy, so the filter can stay on for every other app. "
+                + "Private library photos are not available in this mode.", 15f, 8));
 
         toggle = new Switch(this);
         toggle.setText("Stream via proxy");

@@ -245,7 +245,27 @@ public class MainActivity extends Activity {
         for (String allowed : ALLOWED_HOSTS) {
             if (host.equals(allowed) || host.endsWith("." + allowed)) return true;
         }
+        // Your own proxy address (the shared-album viewer) when the proxy is on.
+        ProxyConfig cfg = ProxyConfig.load(this);
+        if (cfg.isReady()) {
+            Uri b = Uri.parse(cfg.base);
+            if (b.getHost() != null && host.equals(b.getHost().toLowerCase())) return true;
+        }
         return false;
+    }
+
+    // With "Stream via proxy" on, the app opens the shared-album viewer that
+    // runs on your own proxy. It sends the access key in a header (never in
+    // the address), and the proxy signs the page in with it.
+    private void loadStart(WebView view) {
+        ProxyConfig cfg = ProxyConfig.load(this);
+        if (cfg.isReady()) {
+            java.util.Map<String, String> h = new java.util.HashMap<String, String>();
+            h.put("X-Access-Key", cfg.key);
+            view.loadUrl(cfg.base + "/", h);
+        } else {
+            view.loadUrl(START_URL);
+        }
     }
 
     private boolean isBlockedPage(String url) {
@@ -360,7 +380,9 @@ public class MainActivity extends Activity {
     private void goHome(WebView view) {
         view.stopLoading();
         view.setVisibility(View.INVISIBLE);
-        view.loadUrl(HOME_URL);
+        ProxyConfig cfg = ProxyConfig.load(this);
+        if (cfg.isReady()) loadStart(view);
+        else view.loadUrl(HOME_URL);
     }
 
     // Full screen for a single photo: tap the middle to hide / show the bars.
@@ -868,7 +890,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        webView.loadUrl(START_URL);
+        loadStart(webView);
     }
 
     // Reads the chosen photos from every place a picker may put them.
@@ -940,7 +962,7 @@ public class MainActivity extends Activity {
         String sig = ProxyConfig.load(this).signature();
         if (!sig.equals(cfgSig)) {
             cfgSig = sig;
-            if (webView != null) webView.reload();
+            if (webView != null) loadStart(webView);
         }
     }
 
