@@ -202,6 +202,23 @@ console.log('Shared-album viewer');
   check('other host refused', (await call('/img?u=' + encodeURIComponent('https://evil.example.com/pw/' + TOKEN_A), { Cookie: cookie })).status === 400);
 }
 
+console.log('Key given as a fingerprint');
+{
+  const fp = await (async () => {
+    const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('k:' + KEY));
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  })();
+  const envFp = { ACCESS_KEY_SHA256: fp };
+  const go = (path, headers = {}) =>
+    worker.fetch(new Request('https://proxy.example.workers.dev' + path, { headers }), envFp);
+  check('fingerprint alone sets it up', (await go('/ping', { 'X-Access-Key': KEY })).status === 200);
+  check('wrong key refused', (await go('/ping', { 'X-Access-Key': 'nope-nope-nope-nope' })).status === 401);
+  check('the fingerprint itself is not accepted as the key', (await go('/ping', { 'X-Access-Key': fp })).status === 401);
+  check('bad fingerprint -> not set up', (await worker.fetch(new Request('https://x.workers.dev/ping'), { ACCESS_KEY_SHA256: 'abc' })).status === 500);
+  const signed = await go('/', { 'X-Access-Key': KEY });
+  check('viewer signs in with fingerprint setup', /pp_session=/.test(signed.headers.get('Set-Cookie') || ''));
+}
+
 globalThis.fetch = realFetch;
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

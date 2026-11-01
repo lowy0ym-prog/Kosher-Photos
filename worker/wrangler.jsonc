@@ -1,7 +1,9 @@
 {
   // Lets Cloudflare deploy this folder straight from GitHub (no pasting).
-  // The name must match your existing Worker so it keeps its ACCESS_KEY secret.
+  // The name must match your existing Worker.
   "name": "round-glade-2408",
   "main": "worker.js",
-  "compatibility_date": "2025-01-01"
+  "compatibility_date": "2025-01-01",
+  // One-way fingerprint of the access key (the key itself is NOT stored here).
+  "vars": { "ACCESS_KEY_SHA256": "ef7b8fa6428a91a1bef9cb8189fff2acf101b29870a96a948d9ceaca457a074a" }
 }

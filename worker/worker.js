@@ -64,6 +64,16 @@ function safeEqual(a, b) {
   return diff === 0;
 }
 
+// The key can be given two ways: the ACCESS_KEY secret (12+ characters), or
+// ACCESS_KEY_SHA256, a one-way fingerprint of the key (64 hex characters) that
+// can live in the config file without revealing the key.
+async function keyHash(env) {
+  const fp = (env.ACCESS_KEY_SHA256 || '').trim().toLowerCase();
+  if (/^[0-9a-f]{64}$/.test(fp)) return fp;
+  if (env.ACCESS_KEY && env.ACCESS_KEY.length >= 12) return sha256Hex('k:' + env.ACCESS_KEY);
+  return '';
+}
+
 function text(status, body) {
   return new Response(body, {
     status,
@@ -74,7 +84,7 @@ function text(status, body) {
 async function keyOk(request, env) {
   const given = request.headers.get('X-Access-Key') || '';
   const a = await sha256Hex('k:' + given);
-  const b = await sha256Hex('k:' + env.ACCESS_KEY);
+  const b = await keyHash(env);
   return safeEqual(a, b);
 }
 
@@ -510,7 +520,7 @@ function sleep(ms) {
 }
 
 async function expectedToken(env) {
-  return sha256Hex('pp1:' + env.ACCESS_KEY);
+  return sha256Hex('pp1:' + (await keyHash(env)));
 }
 
 async function isAuthed(request, env) {
@@ -528,7 +538,7 @@ async function handleLogin(request, env) {
   }
   const supplied = typeof body.key === 'string' ? body.key : '';
   const a = await sha256Hex('k:' + supplied);
-  const b = await sha256Hex('k:' + env.ACCESS_KEY);
+  const b = await keyHash(env);
   if (!safeEqual(a, b)) {
     await sleep(600); // slow down guessing
     return json(401, { error: 'Wrong key' });
@@ -664,7 +674,7 @@ async function proxyPicture(request, url) {
 export default {
   async fetch(request, env) {
     try {
-      if (!env.ACCESS_KEY || env.ACCESS_KEY.length < 12) {
+      if (!(await keyHash(env))) {
         return text(500, 'Not set up: add an ACCESS_KEY secret of 12 or more characters.');
       }
       const url = new URL(request.url);
