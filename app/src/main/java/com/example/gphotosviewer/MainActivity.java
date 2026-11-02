@@ -81,6 +81,7 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------
     private static final String[] ALLOWED_HOSTS = {
         "photos.google.com",
+        "photos.app.goo.gl",
         "accounts.google.com",
         "accounts.youtube.com",
         "consent.google.com",
@@ -127,6 +128,12 @@ public class MainActivity extends Activity {
         + "  var el=e.target,top=true;"
         + "  while(el&&el!==document){if(el.scrollTop>0){top=false;break;}el=el.parentElement;}"
         + "  if(window.scrollY>0)top=false;"
+        // Touches on the right-hand edge (the date scrubber) never count as "at top".
+        + "  var tx=(e.touches&&e.touches[0])?e.touches[0].clientX:0;"
+        + "  if(tx>window.innerWidth-72)top=false;"
+        // Photos scrolls inside its own container: check the container in the middle of the screen too.
+        + "  var cc=document.elementFromPoint(window.innerWidth/2,window.innerHeight/2);"
+        + "  while(cc&&cc!==document){if(cc.scrollTop>0){top=false;break;}cc=cc.parentElement;}"
         + "  if(/\\/photo\\//.test(location.pathname))top=false;"
         + "  if(window.visualViewport&&window.visualViewport.scale>1.01)top=false;"
         + "  try{KP.setTop(top);}catch(x){}"
@@ -401,7 +408,67 @@ public class MainActivity extends Activity {
                 });
     }
 
+    // A side scrubber for albums and other long pages (the normal photo
+    // timeline already has its own): drag the handle on the right edge to
+    // jump through the page. Its size shows how long the page is.
+    private static final String SCRUB_JS =
+        "(function(){"
+        + "if(window.__kpScrub)return;window.__kpScrub=true;"
+        + "var box=null,thumb=null,lab=null,sc=null,hideT=null,drag=false;"
+        + "function pageOk(){var p=location.pathname;"
+        + "  if(/\\/photo\\//.test(p))return false;"
+        + "  if(p==='/'||/^\\/u\\/\\d+\\/?$/.test(p))return false;"
+        + "  return true;}"
+        + "function build(){"
+        + "  if(box)return;"
+        + "  box=document.createElement('div');"
+        + "  box.style.cssText='position:fixed;right:0;top:72px;bottom:24px;width:44px;z-index:2147483000;display:none;pointer-events:none;';"
+        + "  thumb=document.createElement('div');"
+        + "  thumb.style.cssText='position:absolute;right:2px;width:40px;height:56px;border-radius:28px 0 0 28px;background:rgba(48,52,56,0.94);color:#e8eaed;display:flex;align-items:center;justify-content:center;font:16px sans-serif;pointer-events:auto;touch-action:none;box-shadow:0 1px 4px rgba(0,0,0,0.5);';"
+        + "  thumb.textContent='\\u2195';"
+        + "  lab=document.createElement('div');"
+        + "  lab.style.cssText='position:absolute;right:48px;height:34px;line-height:34px;padding:0 12px;border-radius:17px;background:rgba(48,52,56,0.94);color:#e8eaed;font:600 15px sans-serif;display:none;white-space:nowrap;';"
+        + "  box.appendChild(lab);box.appendChild(thumb);"
+        + "  document.documentElement.appendChild(box);"
+        + "  function move(y){"
+        + "    if(!sc)return;"
+        + "    var r=box.getBoundingClientRect(),th=56;"
+        + "    var f=(y-r.top-th/2)/Math.max(1,(r.height-th));"
+        + "    f=Math.max(0,Math.min(1,f));"
+        + "    sc.scrollTop=f*(sc.scrollHeight-sc.clientHeight);"
+        + "    update();"
+        + "  }"
+        + "  thumb.addEventListener('touchstart',function(e){drag=true;lab.style.display='block';clearTimeout(hideT);e.preventDefault();e.stopPropagation();},{passive:false});"
+        + "  thumb.addEventListener('touchmove',function(e){if(!drag)return;move(e.touches[0].clientY);e.preventDefault();e.stopPropagation();},{passive:false});"
+        + "  function end(){drag=false;lab.style.display='none';later();}"
+        + "  thumb.addEventListener('touchend',end,{passive:true});"
+        + "  thumb.addEventListener('touchcancel',end,{passive:true});"
+        + "}"
+        + "function update(){"
+        + "  if(!sc||!box)return;"
+        + "  var range=sc.scrollHeight-sc.clientHeight;"
+        + "  var f=range>0?sc.scrollTop/range:0;"
+        + "  f=Math.max(0,Math.min(1,f));"
+        + "  var th=56,bh=box.clientHeight;"
+        + "  thumb.style.top=(f*Math.max(0,bh-th))+'px';"
+        + "  lab.style.top=(f*Math.max(0,bh-th)+11)+'px';"
+        + "  lab.textContent=Math.round(f*100)+'%  \\u00b7  '+Math.max(1,Math.round(sc.scrollHeight/sc.clientHeight))+' screens';"
+        + "}"
+        + "function later(){clearTimeout(hideT);hideT=setTimeout(function(){if(!drag&&box)box.style.display='none';},2200);}"
+        + "document.addEventListener('scroll',function(e){"
+        + "  var t=e.target;"
+        + "  var el=(t===document)?(document.scrollingElement||document.documentElement):t;"
+        + "  if(!el||el.nodeType!==1)return;"
+        + "  if(el.clientHeight<window.innerHeight*0.5)return;"
+        + "  if(el.scrollHeight-el.clientHeight<window.innerHeight*0.5)return;"
+        + "  if(!pageOk()){if(box)box.style.display='none';return;}"
+        + "  build();sc=el;box.style.display='block';update();"
+        + "  if(!drag)later();"
+        + "},true);"
+        + "})();";
+
     private void injectBannerHider(WebView view) {
+        view.evaluateJavascript(SCRUB_JS, null);
         view.evaluateJavascript(FS_JS, null);
         view.evaluateJavascript(HIDE_BANNERS_JS, null);
     }
@@ -481,6 +548,8 @@ public class MainActivity extends Activity {
                         swipeMulti = false;
                         pullStartY = ev.getRawY();
                         pullTracking = !refreshing;
+                        // Dragging the scrubber on the right edge is never a refresh.
+                        if (ev.getX() > webView.getWidth() - 72f * density) pullTracking = false;
                         pulling = false;
                         touchAtTop = false; // the page confirms "at top" again for this touch
                         downX = ev.getX();
@@ -809,7 +878,36 @@ public class MainActivity extends Activity {
             }
         });
 
-        webView.loadUrl(START_URL);
+        String shared = sharedLinkFrom(getIntent());
+        webView.loadUrl(shared != null ? shared : START_URL);
+    }
+
+    // A Google Photos album link that was tapped or shared to this app
+    // (photos.app.goo.gl/... or photos.google.com/share/...), or null.
+    private String sharedLinkFrom(Intent intent) {
+        if (intent == null) return null;
+        String raw = null;
+        if (Intent.ACTION_VIEW.equals(intent.getAction()) && intent.getData() != null) {
+            raw = intent.getData().toString();
+        } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            CharSequence t = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
+            if (t != null) raw = t.toString();
+        }
+        if (raw == null) return null;
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("https://(photos\\.app\\.goo\\.gl/[^\\s]+|photos\\.google\\.com/[^\\s]*share/[^\\s]+)")
+                .matcher(raw);
+        if (!m.find()) return null;
+        String url = m.group();
+        return (isAllowed(url) && !isBlockedPage(url)) ? url : null;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        String shared = sharedLinkFrom(intent);
+        if (shared != null && webView != null) webView.loadUrl(shared);
     }
 
     // Reads the chosen photos from every place a picker may put them.
