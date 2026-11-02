@@ -427,7 +427,7 @@ public class MainActivity extends Activity {
         + "  thumb.style.cssText='position:absolute;right:2px;width:40px;height:56px;border-radius:28px 0 0 28px;background:rgba(48,52,56,0.94);color:#e8eaed;display:flex;align-items:center;justify-content:center;font:16px sans-serif;pointer-events:auto;touch-action:none;box-shadow:0 1px 4px rgba(0,0,0,0.5);';"
         + "  thumb.textContent='\\u2195';"
         + "  lab=document.createElement('div');"
-        + "  lab.style.cssText='position:absolute;right:48px;height:34px;line-height:34px;padding:0 12px;border-radius:17px;background:rgba(48,52,56,0.94);color:#e8eaed;font:600 15px sans-serif;display:none;white-space:nowrap;';"
+        + "  lab.style.cssText='position:absolute;right:48px;height:40px;padding:0 18px;border-radius:20px;background:rgba(48,52,56,0.94);color:#e8eaed;font:600 15px sans-serif;display:none;align-items:center;justify-content:center;text-align:center;white-space:nowrap;box-sizing:border-box;';"
         + "  box.appendChild(lab);box.appendChild(thumb);"
         + "  document.documentElement.appendChild(box);"
         + "  function move(y){"
@@ -438,7 +438,7 @@ public class MainActivity extends Activity {
         + "    sc.scrollTop=f*(sc.scrollHeight-sc.clientHeight);"
         + "    update();"
         + "  }"
-        + "  thumb.addEventListener('touchstart',function(e){drag=true;lab.style.display='block';clearTimeout(hideT);e.preventDefault();e.stopPropagation();},{passive:false});"
+        + "  thumb.addEventListener('touchstart',function(e){drag=true;lab.style.display='flex';clearTimeout(hideT);e.preventDefault();e.stopPropagation();},{passive:false});"
         + "  thumb.addEventListener('touchmove',function(e){if(!drag)return;move(e.touches[0].clientY);e.preventDefault();e.stopPropagation();},{passive:false});"
         + "  function end(){drag=false;lab.style.display='none';later();}"
         + "  thumb.addEventListener('touchend',end,{passive:true});"
@@ -451,7 +451,7 @@ public class MainActivity extends Activity {
         + "  f=Math.max(0,Math.min(1,f));"
         + "  var th=56,bh=box.clientHeight;"
         + "  thumb.style.top=(f*Math.max(0,bh-th))+'px';"
-        + "  lab.style.top=(f*Math.max(0,bh-th)+11)+'px';"
+        + "  lab.style.top=(f*Math.max(0,bh-th)+8)+'px';"
         + "  lab.textContent=Math.round(f*100)+'%  \\u00b7  '+Math.max(1,Math.round(sc.scrollHeight/sc.clientHeight))+' screens';"
         + "}"
         + "function later(){clearTimeout(hideT);hideT=setTimeout(function(){if(!drag&&box)box.style.display='none';},2200);}"
@@ -878,6 +878,7 @@ public class MainActivity extends Activity {
             }
         });
 
+        if (ACTION_OPEN_CLIPBOARD.equals(getIntent().getAction())) pendingClipboard = true;
         String shared = sharedLinkFrom(getIntent());
         webView.loadUrl(shared != null ? shared : START_URL);
     }
@@ -892,7 +893,15 @@ public class MainActivity extends Activity {
         } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
             CharSequence t = intent.getCharSequenceExtra(Intent.EXTRA_TEXT);
             if (t != null) raw = t.toString();
+        } else if (Intent.ACTION_PROCESS_TEXT.equals(intent.getAction())) {
+            CharSequence t = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT);
+            if (t != null) raw = t.toString();
         }
+        return albumLinkIn(raw);
+    }
+
+    // Finds a Google Photos album link inside some text, or null.
+    private String albumLinkIn(String raw) {
         if (raw == null) return null;
         java.util.regex.Matcher m = java.util.regex.Pattern
                 .compile("https://(photos\\.app\\.goo\\.gl/[^\\s]+|photos\\.google\\.com/[^\\s]*share/[^\\s]+)")
@@ -902,10 +911,48 @@ public class MainActivity extends Activity {
         return (isAllowed(url) && !isBlockedPage(url)) ? url : null;
     }
 
+    // "Paste album link" (long-press the app icon): the clipboard can only be
+    // read once the app is in front, so this waits for the window focus.
+    private static final String ACTION_OPEN_CLIPBOARD = "com.example.gphotosviewer.OPEN_CLIPBOARD";
+    private boolean pendingClipboard = false;
+
+    private void openClipboardLink() {
+        pendingClipboard = false;
+        String link = null;
+        try {
+            android.content.ClipboardManager cm =
+                    (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            android.content.ClipData clip = cm == null ? null : cm.getPrimaryClip();
+            if (clip != null) {
+                for (int i = 0; i < clip.getItemCount() && link == null; i++) {
+                    CharSequence t = clip.getItemAt(i).coerceToText(this);
+                    if (t != null) link = albumLinkIn(t.toString());
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        if (link != null) {
+            webView.loadUrl(link);
+        } else {
+            toast("Copy a Google Photos album link first, then try again.");
+        }
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus && pendingClipboard && webView != null) openClipboardLink();
+    }
+
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (ACTION_OPEN_CLIPBOARD.equals(intent.getAction())) {
+            pendingClipboard = true;
+            if (hasWindowFocus() && webView != null) openClipboardLink();
+            return;
+        }
         String shared = sharedLinkFrom(intent);
         if (shared != null && webView != null) webView.loadUrl(shared);
     }

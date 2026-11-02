@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shortcut_paste_short">Paste album link</string>
+    <string name="shortcut_paste_long">Paste album link and open</string>
+    <string name="process_text_label">Open in Kosher Photos</string>
+</resources>
