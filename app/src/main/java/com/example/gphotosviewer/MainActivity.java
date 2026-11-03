@@ -414,7 +414,7 @@ public class MainActivity extends Activity {
     private static final String SCRUB_JS =
         "(function(){"
         + "if(window.__kpScrub)return;window.__kpScrub=true;"
-        + "var box=null,thumb=null,lab=null,sc=null,hideT=null,drag=false;"
+        + "var box=null,thumb=null,lab=null,sc=null,hideT=null,hideD=null,drag=false,vis=false,last=-1;"
         + "function pageOk(){var p=location.pathname;"
         + "  if(/\\/photo\\//.test(p))return false;"
         + "  if(p==='/'||/^\\/u\\/\\d+\\/?$/.test(p))return false;"
@@ -422,7 +422,7 @@ public class MainActivity extends Activity {
         + "function build(){"
         + "  if(box)return;"
         + "  box=document.createElement('div');"
-        + "  box.style.cssText='position:fixed;right:0;top:72px;bottom:24px;width:44px;z-index:2147483000;display:none;pointer-events:none;';"
+        + "  box.style.cssText='position:fixed;right:0;top:72px;bottom:24px;width:44px;z-index:2147483000;display:none;pointer-events:none;opacity:0;transform:translateX(60px);transition:transform .22s ease,opacity .22s ease;';"
         + "  thumb=document.createElement('div');"
         + "  thumb.style.cssText='position:absolute;right:2px;width:40px;height:56px;border-radius:28px 0 0 28px;background:rgba(48,52,56,0.94);color:#e8eaed;display:flex;align-items:center;justify-content:center;font:16px sans-serif;pointer-events:auto;touch-action:none;box-shadow:0 1px 4px rgba(0,0,0,0.5);';"
         + "  thumb.textContent='\\u2195';"
@@ -438,7 +438,7 @@ public class MainActivity extends Activity {
         + "    sc.scrollTop=f*(sc.scrollHeight-sc.clientHeight);"
         + "    update();"
         + "  }"
-        + "  thumb.addEventListener('touchstart',function(e){drag=true;lab.style.display='flex';clearTimeout(hideT);e.preventDefault();e.stopPropagation();},{passive:false});"
+        + "  thumb.addEventListener('touchstart',function(e){drag=true;show();lab.style.display='flex';clearTimeout(hideT);e.preventDefault();e.stopPropagation();},{passive:false});"
         + "  thumb.addEventListener('touchmove',function(e){if(!drag)return;move(e.touches[0].clientY);e.preventDefault();e.stopPropagation();},{passive:false});"
         + "  function end(){drag=false;lab.style.display='none';later();}"
         + "  thumb.addEventListener('touchend',end,{passive:true});"
@@ -454,15 +454,19 @@ public class MainActivity extends Activity {
         + "  lab.style.top=(f*Math.max(0,bh-th)+8)+'px';"
         + "  lab.textContent=Math.round(f*100)+'%  \\u00b7  '+Math.max(1,Math.round(sc.scrollHeight/sc.clientHeight))+' screens';"
         + "}"
-        + "function later(){clearTimeout(hideT);hideT=setTimeout(function(){if(!drag&&box)box.style.display='none';},2200);}"
+        + "function show(){clearTimeout(hideD);if(!vis){box.style.display='block';void box.offsetWidth;box.style.transform='translateX(0)';box.style.opacity='1';vis=true;}}"
+        + "function hide(){if(!box||!vis)return;vis=false;box.style.transform='translateX(60px)';box.style.opacity='0';hideD=setTimeout(function(){if(!vis)box.style.display='none';},260);}"
+        + "function later(){clearTimeout(hideT);hideT=setTimeout(function(){if(!drag)hide();},1200);}"
         + "document.addEventListener('scroll',function(e){"
         + "  var t=e.target;"
         + "  var el=(t===document)?(document.scrollingElement||document.documentElement):t;"
         + "  if(!el||el.nodeType!==1)return;"
         + "  if(el.clientHeight<window.innerHeight*0.5)return;"
         + "  if(el.scrollHeight-el.clientHeight<window.innerHeight*0.5)return;"
-        + "  if(!pageOk()){if(box)box.style.display='none';return;}"
-        + "  build();sc=el;box.style.display='block';update();"
+        + "  if(!pageOk()){hide();return;}"
+        + "  build();sc=el;var st=el.scrollTop;"
+        + "  if(!drag&&Math.abs(st-last)<2)return;"
+        + "  last=st;show();update();"
         + "  if(!drag)later();"
         + "},true);"
         + "})();";
@@ -916,26 +920,76 @@ public class MainActivity extends Activity {
     private static final String ACTION_OPEN_CLIPBOARD = "com.example.gphotosviewer.OPEN_CLIPBOARD";
     private boolean pendingClipboard = false;
 
-    private void openClipboardLink() {
-        pendingClipboard = false;
-        String link = null;
+    private android.app.AlertDialog pasteDialog;
+
+    private String clipboardLink() {
         try {
             android.content.ClipboardManager cm =
                     (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
             android.content.ClipData clip = cm == null ? null : cm.getPrimaryClip();
             if (clip != null) {
-                for (int i = 0; i < clip.getItemCount() && link == null; i++) {
+                for (int i = 0; i < clip.getItemCount(); i++) {
                     CharSequence t = clip.getItemAt(i).coerceToText(this);
-                    if (t != null) link = albumLinkIn(t.toString());
+                    String link = t == null ? null : albumLinkIn(t.toString());
+                    if (link != null) return link;
                 }
             }
         } catch (Exception ignored) {
         }
+        return null;
+    }
+
+    // Shows a small box to paste an album link into. If a Google Photos link
+    // was just copied, it is already filled in.
+    private void openClipboardLink() {
+        pendingClipboard = false;
+        if (pasteDialog != null && pasteDialog.isShowing()) return;
+        final float d = getResources().getDisplayMetrics().density;
+        final android.widget.EditText box = new android.widget.EditText(this);
+        box.setHint("Paste a Google Photos album link");
+        box.setSingleLine(true);
+        box.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        String link = clipboardLink();
         if (link != null) {
-            webView.loadUrl(link);
-        } else {
-            toast("Copy a Google Photos album link first, then try again.");
+            box.setText(link);
+            box.selectAll();
         }
+        FrameLayout wrap = new FrameLayout(this);
+        wrap.setPadding((int) (20 * d), (int) (8 * d), (int) (20 * d), 0);
+        wrap.addView(box);
+
+        pasteDialog = new android.app.AlertDialog.Builder(
+                this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Open album link")
+                .setView(wrap)
+                .setPositiveButton("Open", new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dlg, int which) {
+                        String l = albumLinkIn(box.getText().toString());
+                        if (l != null) webView.loadUrl(l);
+                        else toast("That is not a Google Photos album link.");
+                    }
+                })
+                .setNeutralButton("Paste", null)
+                .setNegativeButton("Cancel", null)
+                .create();
+        pasteDialog.getWindow().setSoftInputMode(
+                android.view.WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE);
+        pasteDialog.show();
+        pasteDialog.getButton(android.app.AlertDialog.BUTTON_NEUTRAL)
+                .setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        String l = clipboardLink();
+                        if (l != null) {
+                            box.setText(l);
+                            box.setSelection(l.length());
+                        } else {
+                            toast("No Google Photos link copied yet.");
+                        }
+                    }
+                });
     }
 
     @Override
