@@ -941,24 +941,30 @@ public class MainActivity extends Activity {
     private Uri[] pendingShare = null;
     private long pendingShareTime = 0L;
     private boolean shareJsPending = false;
-    private static final long SHARE_VALID_MS = 5 * 60 * 1000L;
+    private static final long SHARE_VALID_MS = 15 * 60 * 1000L;
 
     // Clicks "Upload" then "Computer" on the Google Photos page. The page then
     // asks for files, and onShowFileChooser hands over the shared ones.
     private static final String SHARE_JS =
         "(function(){"
-        + "window.__kpUpStop=0;var tries=0;"
+        + "window.__kpUpStop=0;var tries=0,lastPlus=0;"
         + "function txt(e){return ((e.getAttribute('aria-label')||'')+' '+(e.innerText||'')).trim().toLowerCase();}"
-        + "function find(re,sel){var l=document.querySelectorAll(sel);"
-        + "  for(var i=0;i<l.length;i++){var t=txt(l[i]);if(re.test(t)&&l[i].getClientRects().length)return l[i];}return null;}"
+        + "function vis(e){return e.getClientRects().length>0;}"
+        + "function find(re,sel,bad){var l=document.querySelectorAll(sel);"
+        + "  for(var i=0;i<l.length;i++){var t=txt(l[i]);"
+        + "    if(re.test(t)&&!(bad&&bad.test(t))&&vis(l[i]))return l[i];}return null;}"
+        // Waits patiently (about 100 seconds) so slow connections can finish loading.
         + "function step(){"
         + "  if(window.__kpUpStop)return;"
         + "  tries++;"
-        + "  var comp=find(/^(computer|from computer|device|this device)\\b/,'[role=menuitem],[role=option],li,button,a');"
-        + "  if(comp){comp.click();return;}"
-        + "  var up=find(/^upload\\b/,'button,[role=button],a,[aria-label]');"
-        + "  if(up&&!up.__kp){up.__kp=1;up.click();}"
-        + "  if(tries<30)setTimeout(step,300);"
+        + "  var item=find(/^(upload|from computer|computer|this device|device)\\b/,'[role=menuitem],[role=option],li,[role=listitem]');"
+        + "  if(item){item.click();return;}"
+        + "  var now=Date.now();"
+        + "  if(now-lastPlus>3500){"
+        + "    var plus=find(/^(create|add|new|upload|plus|\\+)/,'button,[role=button],[aria-label]',/album|share|person|people|account|favorite|search/);"
+        + "    if(plus){plus.click();lastPlus=now;}"
+        + "  }"
+        + "  if(tries<200)setTimeout(step,500);"
         + "}"
         + "step();"
         + "})();";
@@ -1032,11 +1038,11 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 if (pendingShare != null && pendingShareTime == stamp) {
-                    toast("Tap Upload, then Computer. Your " + pendingShare.length
+                    toast("Tap +, then Upload. Your " + pendingShare.length
                             + " shared file(s) will be sent.");
                 }
             }
-        }, 12000);
+        }, 45000);
     }
 
     private void startShareOnHome() {
