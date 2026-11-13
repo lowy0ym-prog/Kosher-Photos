@@ -728,6 +728,15 @@ public class MainActivity extends Activity {
                 if (url != null && url.contains("photos.google.com")) {
                     injectBannerHider(view);
                 }
+                if (shareJsPending && pendingShare != null && url != null && isHomePage(url)) {
+                    shareJsPending = false;
+                    view.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            runShareUpload();
+                        }
+                    }, 1500);
+                }
             }
         });
 
@@ -737,6 +746,13 @@ public class MainActivity extends Activity {
             public boolean onShowFileChooser(WebView view,
                                              ValueCallback<Uri[]> callback,
                                              FileChooserParams params) {
+                Uri[] shared = takePendingShare();
+                if (shared != null) {
+                    callback.onReceiveValue(shared);
+                    view.evaluateJavascript("window.__kpUpStop=1", null);
+                    toast("Sending " + shared.length + " file(s) to Google Photos...");
+                    return true;
+                }
                 if (filePathCallback != null) {
                     filePathCallback.onReceiveValue(null);
                 }
@@ -883,6 +899,7 @@ public class MainActivity extends Activity {
         });
 
         if (ACTION_OPEN_CLIPBOARD.equals(getIntent().getAction())) pendingClipboard = true;
+        handleSharedMedia(getIntent());
         String shared = sharedLinkFrom(getIntent());
         webView.loadUrl(shared != null ? shared : START_URL);
     }
@@ -919,6 +936,118 @@ public class MainActivity extends Activity {
     // read once the app is in front, so this waits for the window focus.
     private static final String ACTION_OPEN_CLIPBOARD = "com.example.gphotosviewer.OPEN_CLIPBOARD";
     private boolean pendingClipboard = false;
+
+    // ---- Share photos/videos TO this app: they are uploaded to Google Photos ----
+    private Uri[] pendingShare = null;
+    private long pendingShareTime = 0L;
+    private boolean shareJsPending = false;
+    private static final long SHARE_VALID_MS = 5 * 60 * 1000L;
+
+    // Clicks "Upload" then "Computer" on the Google Photos page. The page then
+    // asks for files, and onShowFileChooser hands over the shared ones.
+    private static final String SHARE_JS =
+        "(function(){"
+        + "window.__kpUpStop=0;var tries=0;"
+        + "function txt(e){return ((e.getAttribute('aria-label')||'')+' '+(e.innerText||'')).trim().toLowerCase();}"
+        + "function find(re,sel){var l=document.querySelectorAll(sel);"
+        + "  for(var i=0;i<l.length;i++){var t=txt(l[i]);if(re.test(t)&&l[i].getClientRects().length)return l[i];}return null;}"
+        + "function step(){"
+        + "  if(window.__kpUpStop)return;"
+        + "  tries++;"
+        + "  var comp=find(/^(computer|from computer|device|this device)\\b/,'[role=menuitem],[role=option],li,button,a');"
+        + "  if(comp){comp.click();return;}"
+        + "  var up=find(/^upload\\b/,'button,[role=button],a,[aria-label]');"
+        + "  if(up&&!up.__kp){up.__kp=1;up.click();}"
+        + "  if(tries<30)setTimeout(step,300);"
+        + "}"
+        + "step();"
+        + "})();";
+
+    // Picks the photos and videos out of a share intent. Returns true when
+    // this was a photo/video share (even if nothing usable was in it).
+    private boolean handleSharedMedia(Intent intent) {
+        if (intent == null) return false;
+        String action = intent.getAction();
+        boolean one = Intent.ACTION_SEND.equals(action);
+        boolean many = Intent.ACTION_SEND_MULTIPLE.equals(action);
+        if (!one && !many) return false;
+        String type = intent.getType();
+        if (type != null && type.startsWith("text/")) return false;
+
+        java.util.ArrayList<Uri> found = new java.util.ArrayList<>();
+        try {
+            if (one) {
+                Object o = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                if (o instanceof Uri) found.add((Uri) o);
+            } else {
+                java.util.ArrayList<Uri> l = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                if (l != null) found.addAll(l);
+            }
+            if (found.isEmpty() && intent.getClipData() != null) {
+                for (int i = 0; i < intent.getClipData().getItemCount(); i++) {
+                    Uri u = intent.getClipData().getItemAt(i).getUri();
+                    if (u != null) found.add(u);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        java.util.ArrayList<Uri> media = new java.util.ArrayList<>();
+        for (Uri u : found) {
+            String t = null;
+            try {
+                t = getContentResolver().getType(u);
+            } catch (Exception ignored) {
+            }
+            if (t == null) t = type;
+            if (t != null && (t.startsWith("image/") || t.startsWith("video/")
+                    || t.equals("*/*"))) {
+                media.add(u);
+            }
+        }
+        if (media.isEmpty()) {
+            toast("Nothing to upload: share photos or videos.");
+            return true;
+        }
+        pendingShare = media.toArray(new Uri[0]);
+        pendingShareTime = System.currentTimeMillis();
+        shareJsPending = true;
+        toast("Getting ready to upload " + media.size() + " file(s)...");
+        return true;
+    }
+
+    private Uri[] takePendingShare() {
+        Uri[] u = pendingShare;
+        boolean fresh = u != null && System.currentTimeMillis() - pendingShareTime < SHARE_VALID_MS;
+        pendingShare = null;
+        shareJsPending = false;
+        return fresh ? u : null;
+    }
+
+    // Starts the upload on the Google Photos main page.
+    private void runShareUpload() {
+        if (pendingShare == null || webView == null) return;
+        webView.evaluateJavascript(SHARE_JS, null);
+        final long stamp = pendingShareTime;
+        webView.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                if (pendingShare != null && pendingShareTime == stamp) {
+                    toast("Tap Upload, then Computer. Your " + pendingShare.length
+                            + " shared file(s) will be sent.");
+                }
+            }
+        }, 12000);
+    }
+
+    private void startShareOnHome() {
+        String cur = webView == null ? null : webView.getUrl();
+        if (cur != null && isHomePage(cur)) {
+            shareJsPending = false;
+            runShareUpload();
+        } else if (webView != null) {
+            webView.loadUrl(HOME_URL); // onPageFinished starts the upload
+        }
+    }
 
     private android.app.AlertDialog pasteDialog;
 
@@ -1005,6 +1134,10 @@ public class MainActivity extends Activity {
         if (ACTION_OPEN_CLIPBOARD.equals(intent.getAction())) {
             pendingClipboard = true;
             if (hasWindowFocus() && webView != null) openClipboardLink();
+            return;
+        }
+        if (handleSharedMedia(intent)) {
+            if (pendingShare != null) startShareOnHome();
             return;
         }
         String shared = sharedLinkFrom(intent);
