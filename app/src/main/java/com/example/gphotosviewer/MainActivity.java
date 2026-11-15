@@ -59,6 +59,17 @@ public class MainActivity extends Activity {
         public void setTop(boolean atTop) {
             touchAtTop = atTop;
         }
+
+        // Lets the upload helper tell us what it clicked or saw (for diagnosis).
+        @JavascriptInterface
+        public void note(final String text) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    toast(text == null ? "" : (text.length() > 160 ? text.substring(0, 160) : text));
+                }
+            });
+        }
     }
 
     // Full-screen video support
@@ -947,20 +958,26 @@ public class MainActivity extends Activity {
     // asks for files, and onShowFileChooser hands over the shared ones.
     private static final String SHARE_JS =
         "(function(){"
-        + "window.__kpUpStop=0;var tries=0,lastPlus=0;"
-        + "function txt(e){return ((e.getAttribute('aria-label')||'')+' '+(e.innerText||'')).trim().toLowerCase();}"
+        + "window.__kpUpStop=0;var tries=0,lastPlus=0,told=false;"
+        + "function txt(e){return ((e.getAttribute('aria-label')||'')+' '+(e.innerText||'')).replace(/\\s+/g,' ').trim().toLowerCase();}"
         + "function vis(e){return e.getClientRects().length>0;}"
         + "function find(re,sel,bad){var l=document.querySelectorAll(sel);"
         + "  for(var i=0;i<l.length;i++){var t=txt(l[i]);"
         + "    if(re.test(t)&&!(bad&&bad.test(t))&&vis(l[i]))return l[i];}return null;}"
+        // Only the choices that mean "send files from this phone"; never Google Drive.
+        + "var OK=/^(computer|from computer|this device|from device|device|upload (files|photos|from (computer|device|this device))|import (photos|files)|upload)\\b/;"
+        + "var NO=/drive|album|collage|animation|movie|folder|book|print|cinematic|highlight|link|shared/;"
+        + "function menuTexts(){var l=document.querySelectorAll('[role=menuitem],[role=option],li'),o=[];"
+        + "  for(var i=0;i<l.length&&o.length<8;i++){if(vis(l[i])){var t=txt(l[i]);if(t)o.push(t.slice(0,24));}}return o.join(' | ');}"
         // Waits patiently (about 100 seconds) so slow connections can finish loading.
         + "function step(){"
         + "  if(window.__kpUpStop)return;"
         + "  tries++;"
-        + "  var item=find(/^(upload|from computer|computer|this device|device)\\b/,'[role=menuitem],[role=option],li,[role=listitem]');"
-        + "  if(item){item.click();return;}"
+        + "  var item=find(OK,'[role=menuitem],[role=option],li,[role=listitem]',NO);"
+        + "  if(item){try{KP.note('Choosing: '+txt(item).slice(0,40));}catch(x){}item.click();return;}"
         + "  var now=Date.now();"
         + "  if(now-lastPlus>3500){"
+        + "    if(lastPlus&&!told){var m=menuTexts();if(m){told=true;try{KP.note('Menu: '+m);}catch(x){}}}"
         + "    var plus=find(/^(create|add|new|upload|plus|\\+)/,'button,[role=button],[aria-label]',/album|share|person|people|account|favorite|search/);"
         + "    if(plus){plus.click();lastPlus=now;}"
         + "  }"
