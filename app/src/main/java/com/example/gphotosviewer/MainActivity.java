@@ -60,6 +60,52 @@ public class MainActivity extends Activity {
             touchAtTop = atTop;
         }
 
+        // A real finger tap at screen pixel (x, y). Android only opens the file
+        // picker for a real touch, never for a click made by a script.
+        @JavascriptInterface
+        public void tap(final float x, final float y) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        final long t = android.os.SystemClock.uptimeMillis();
+                        MotionEvent down = MotionEvent.obtain(t, t, MotionEvent.ACTION_DOWN, x, y, 0);
+                        webView.dispatchTouchEvent(down);
+                        down.recycle();
+                        webView.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                long t2 = android.os.SystemClock.uptimeMillis();
+                                MotionEvent up = MotionEvent.obtain(t, t2, MotionEvent.ACTION_UP, x, y, 0);
+                                webView.dispatchTouchEvent(up);
+                                up.recycle();
+                            }
+                        }, 70);
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
+        }
+
+        // A message that stays on screen until dismissed (easy to read or screenshot).
+        @JavascriptInterface
+        public void report(final String text) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        new android.app.AlertDialog.Builder(MainActivity.this,
+                                android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                                .setTitle("Upload helper")
+                                .setMessage(text == null ? "" : text)
+                                .setPositiveButton("OK", null)
+                                .show();
+                    } catch (Exception ignored) {
+                    }
+                }
+            });
+        }
+
         // Lets the upload helper tell us what it clicked or saw (for diagnosis).
         @JavascriptInterface
         public void note(final String text) {
@@ -964,24 +1010,34 @@ public class MainActivity extends Activity {
         + "function find(re,sel,bad){var l=document.querySelectorAll(sel);"
         + "  for(var i=0;i<l.length;i++){var t=txt(l[i]);"
         + "    if(re.test(t)&&!(bad&&bad.test(t))&&vis(l[i]))return l[i];}return null;}"
+        // A real touch on the element (a scripted click cannot open the file picker).
+        + "function tapEl(el){"
+        + "  var r=el.getBoundingClientRect(),vv=window.visualViewport;"
+        + "  var ox=vv?vv.offsetLeft:0,oy=vv?vv.offsetTop:0,k=window.devicePixelRatio||1;"
+        + "  var x=(r.left+r.width/2-ox)*k,y=(r.top+r.height/2-oy)*k;"
+        + "  try{KP.tap(x,y);}catch(e){el.click();}"
+        + "}"
         // Only the choices that mean "send files from this phone"; never Google Drive.
         + "var OK=/^(computer|from computer|this device|from device|device|upload (files|photos|from (computer|device|this device))|import (photos|files)|upload)\\b/;"
         + "var NO=/drive|album|collage|animation|movie|folder|book|print|cinematic|highlight|link|shared/;"
         + "function menuTexts(){var l=document.querySelectorAll('[role=menuitem],[role=option],li'),o=[];"
-        + "  for(var i=0;i<l.length&&o.length<8;i++){if(vis(l[i])){var t=txt(l[i]);if(t)o.push(t.slice(0,24));}}return o.join(' | ');}"
+        + "  for(var i=0;i<l.length&&o.length<10;i++){if(vis(l[i])){var t=txt(l[i]);if(t)o.push(t.slice(0,30));}}return o.join(' | ');}"
+        + "function buttonTexts(){var l=document.querySelectorAll('button,[role=button]'),o=[];"
+        + "  for(var i=0;i<l.length&&o.length<14;i++){if(vis(l[i])){var t=txt(l[i]);if(t)o.push(t.slice(0,24));}}return o.join(' | ');}"
         // Waits patiently (about 100 seconds) so slow connections can finish loading.
         + "function step(){"
         + "  if(window.__kpUpStop)return;"
         + "  tries++;"
         + "  var item=find(OK,'[role=menuitem],[role=option],li,[role=listitem]',NO);"
-        + "  if(item){try{KP.note('Choosing: '+txt(item).slice(0,40));}catch(x){}item.click();return;}"
+        + "  if(item){try{KP.note('Choosing: '+txt(item).slice(0,40));}catch(x){}tapEl(item);return;}"
         + "  var now=Date.now();"
         + "  if(now-lastPlus>3500){"
-        + "    if(lastPlus&&!told){var m=menuTexts();if(m){told=true;try{KP.note('Menu: '+m);}catch(x){}}}"
+        + "    if(lastPlus&&!told){var m=menuTexts();if(m){told=true;try{KP.report('I pressed + but did not recognise a safe choice. Menu items: '+m);}catch(x){}}}"
         + "    var plus=find(/^(create|add|new|upload|plus|\\+)/,'button,[role=button],[aria-label]',/album|share|person|people|account|favorite|search/);"
-        + "    if(plus){plus.click();lastPlus=now;}"
+        + "    if(plus){tapEl(plus);lastPlus=now;}"
         + "  }"
         + "  if(tries<200)setTimeout(step,500);"
+        + "  else if(!lastPlus){try{KP.report('I could not find the + button. Buttons on the page: '+buttonTexts());}catch(x){}}"
         + "}"
         + "step();"
         + "})();";
@@ -1055,8 +1111,16 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 if (pendingShare != null && pendingShareTime == stamp) {
-                    toast("Tap +, then Upload. Your " + pendingShare.length
-                            + " shared file(s) will be sent.");
+                    try {
+                        new android.app.AlertDialog.Builder(MainActivity.this,
+                                android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                                .setTitle("Your files are ready")
+                                .setMessage(pendingShare.length + " shared file(s) will be sent as soon"
+                                        + " as you tap + and then Upload files.")
+                                .setPositiveButton("OK", null)
+                                .show();
+                    } catch (Exception ignored) {
+                    }
                 }
             }
         }, 45000);
